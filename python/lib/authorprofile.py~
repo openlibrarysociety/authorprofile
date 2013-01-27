@@ -1,0 +1,57 @@
+from authorprofile.common import AUTHORCLAIM_RECORDS_ROOT_PATH,ACIS_NS
+
+from lxml import etree
+from re import sub
+
+def getAMFFilePathForACISID(acisID):
+
+    return AUTHORCLAIM_RECORDS_ROOT_PATH+sub('(.)','\\1/',sub('\d*$','',acisID[1:len(acisID)]))+acisID+'.amf.xml'
+
+def getACISIDForAMFDoc(amfDoc):
+    try:
+        return amfDoc.xpath('//acis:shortid/text()',namespaces=ACIS_NS).pop(0)
+
+    except:
+        pass
+
+def getACISNameVarForAMFDoc(amfDoc):
+
+    try:
+        return amfDoc.xpath('//acis:variation/text()',namespaces=ACIS_NS)
+
+    except:
+        pass
+
+
+class AuthorClaimUser:
+
+    # Can instantiate either by directly parsing the AuthorClaim user record or with the ACIS ID.
+    def __init__(self,amfFilePath=None,acisID=None):
+
+        if not amfFilePath and acisID:
+            amfFilePath=getAMFFilePathForACISID(acisID)
+
+        try:
+            self.amfDoc=etree.parse(amfFilePath)
+
+        except:
+            print 'Could not parse the AuthorClaim XML file',amfFilePath
+            raise
+
+        self.amfFilePath=amfFilePath
+
+        # Get the name variations
+        self.nameVariations=getACISNameVarForAMFDoc(self.amfDoc)
+
+        if not acisID:
+            acisID=getACISIDForAMFDoc(self.amfDoc)
+
+        self.acisID=acisID
+
+    def toJSON(self):
+
+        return {'class':AuthorClaimUser.__name__,'acisID':self.acisID,'amfFilePath':self.amfFilePath,'nameVariations':self.nameVariations}
+
+    def __repr__(self):
+
+        return str(self.toJSON())

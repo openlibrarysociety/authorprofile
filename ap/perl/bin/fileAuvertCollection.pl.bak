@@ -1,0 +1,58 @@
+#!/usr/bin/perl
+
+use lib qw( /home/aupro/ap/perl/lib /home/aupro/usr/lib/perl );
+
+use strict;
+use File::Temp qw(tempdir); 
+
+use BerkeleyDB;
+use AuthorProfile::Conf;
+use Mamf::Common qw(integrate_file integrate_dir);
+use AuthorProfile::Auvert qw(auvert_file_life 
+                             auvert_dir 
+                             process_in_file_time_start
+                             process_in_file_time_end
+                             mark_all_files_as_processed
+                             fileAuvertFile
+                           );
+use AuthorProfile::Common qw(get_mongodb_collection);
+
+use Data::Dumper;
+
+## run parameter: do clean up of /tmp/, set to 0 or 1
+
+my $VERBOSE=1;
+
+## Global constants
+my $home_dir=$ENV{'HOME'};
+my $ap_dir="$home_dir/ap/amf/auverted";
+my $input_dir="$home_dir/ap/amf/3lib/";
+
+binmode(STDOUT,"utf8");
+
+sub process_dir {
+  my $amfColl=shift;
+  my $in_dir=$input_dir.$amfColl;
+
+  if((-d $in_dir) and grep $in_dir,`find $input_dir -maxdepth 1 -type d`) {
+
+    print "processing $in_dir...\n" if $VERBOSE;
+    my @files = `find $in_dir -name '*.amf.xml'`;
+    if(not @files) {
+      foreach my $subdir (`find $in_dir -type d`) {
+        chomp $subdir;
+        next if $subdir eq $in_dir;
+        process_dir($subdir);
+      }
+    }
+    foreach my $file (@files) {
+      print "processing $file\n" if $VERBOSE;
+      chomp $file;
+      fileAuvertFile($file,$amfColl);
+    }
+  }
+  else {
+    die "Fatal: Collection $amfColl could not be found";
+  }
+}
+process_dir($ARGV[0]);

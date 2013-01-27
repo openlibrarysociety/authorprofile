@@ -1,0 +1,22 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+package Tree;
+
+sub new {
+  my $class=shift;
+
+  my $self={
+             'depth' => shift,
+            # Paths are composed of edges
+             'paths' => shift,
+             'nodes' => shift
+            };
+
+  bless $self,$class;
+  return $self;
+}
+
+1;

@@ -1,0 +1,53 @@
+<div xmlns="http://www.w3.org/1999/xhtml" title="style structure">
+
+<dl>
+  <dt>
+    <a href="http://authorprofile.org//style/ap.css">ap.css</a>
+  </dt>
+  <dd>
+    single css file used
+  </dd>
+  <dt> 
+    <a href="http://authorprofile.org//style/aunex.xslt.xml">aunex.xslt.xml</a>
+  </dt>
+  <dd>
+  </dd>
+  <dt> 
+    <a href="http://authorprofile.org//style/authorlist.xslt.xml">authorlist.xslt.xml</a>
+  </dt>
+  <dd>
+  </dd>
+  <dt> 
+    <a href="http://authorprofile.org//style/common.xslt.xml">common.xslt.xml</a>
+  </dt>
+  <dd>
+    common routines
+  </dd>
+  <dt> 
+    <a href="http://authorprofile.org//style/directory.xslt.xml">directory.xslt.xml</a>
+  </dt>
+  <dd>
+  </dd>
+  <dt> 
+    <a href="http://authorprofile.org//style/doc.xslt.xml">doc.xslt.xml</a>
+  </dt>
+  <dd>
+    style for documentation and homepage
+  </dd>
+  <dt> 
+    <a href="http://authorprofile.org//style/error.xslt.xml">error.xslt.xml</a>
+  </dt>
+  <dd>
+  </dd>
+  <dt> 
+    <a href="http://authorprofile.org//style/file.xslt.xml">file.xslt.xml</a>
+  </dt>
+  <dd>
+  </dd>
+  <dt> 
+    <a href="http://authorprofile.org//style/profile.xslt.xml">profile.xslt.xml</a>
+  </dt>
+  <dd>
+  </dd>
+</dl>
+</div>

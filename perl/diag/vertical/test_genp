@@ -1,0 +1,10 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use lib qw(/home/aupro/ap/perl/lib);
+
+use AuthorProfile::Network qw(generate_poma);
+
+generate_poma;

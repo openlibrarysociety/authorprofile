@@ -1,0 +1,324 @@
+#!/usr/bin/perl
+
+use lib qw(/home/aupro/ap/perl/lib /home/aupro/usr/lib/perl);
+
+use strict;
+use warnings; 
+use Data::Dumper;
+use Date::Parse;
+use Date::Format;
+use File::Slurp;
+use File::Basename;
+use JSON::XS;
+use XML::LibXML;
+
+use AuthorProfile::Common qw(open_db 
+                             close_db
+                             put_in_db_json
+                             get_from_db_json);
+use AuthorProfile::Conf;
+## important settings
+my $chunk_size=20;
+
+## output direectory for html
+my $out_dir="$home_dir/ap/html/";
+## output directory for xml
+my $xslt_file="$xslt_dir/authorlist.xslt.xml";
+my $general_name='by_last_change_';
+
+## get the last acitons
+my $last_change;
+if(-f $last_change_file) {
+  $last_change=decode_json(read_file($last_change_file));
+}
+else {
+  print "fatal: no last actions file: $last_change_file\n";
+  exit;
+}
+
+die Dumper $last_change_file;
+
+## compile stylesheet
+my $stylesheet=&AuthorProfile::Common::load_xslt($xslt_file);
+
+
+## read authors from profile directory
+my $authors=gather_authors_from_profile_dir($ap_dir);
+
+#print Dumper $last_change;
+
+## sort authors by time
+my @author_keys=keys %{$authors};
+
+foreach my $author_key (@author_keys) {
+  if(not defined($last_change->{$author_key})) {
+    $last_change->{$author_key}=0;
+  }
+}
+
+@author_keys=sort {$last_change->{$b} <=> $last_change->{$a}} @author_keys;
+
+
+## prepare for chunking
+my $number_of_authors=scalar @author_keys;
+my $last_chunk=($number_of_authors  - ($number_of_authors % $chunk_size))/$chunk_size -1;
+my $count_authors=0;
+my $count_chunk=1;
+
+## compose dom
+my $dom;
+my $chunk_element;
+my $file_name_part='';
+my $criterion_name="time of last profile change";
+while($count_authors<$number_of_authors) {
+  if($count_authors % $chunk_size == 0) {
+    ## if old document, close it
+    if(defined($chunk_element)) {
+      if(not $file_name_part) {
+        $file_name_part=1;
+      }
+      else {
+        $file_name_part++;
+      }      
+      $dom->setDocumentElement($chunk_element);
+      ## create XML file (for Gina)
+      my $fh;
+      my $xml_out_file="$xml_dir/$general_name$file_name_part.xml";
+      if(not -d dirname($xml_out_file)) {
+        mkpath(dirname($xml_out_file));
+      }
+      open $fh, "> $xml_out_file" or die;
+      binmode $fh;
+      $dom->toFH($fh,1);
+      close $fh;
+      ## XML done, now create html
+      my $chunk_number=$count_chunk-1;
+      my $html=$stylesheet->transform($dom, 
+                                      criterion_name =>"'$criterion_name'",
+                                      general_name=>"'$general_name'",
+                                      chunk_number =>"'$chunk_number'");
+      open $fh, "> $html_dir/$general_name$file_name_part.html" or die;
+      binmode $fh; 
+      $html->toFH($fh,1);
+      close $fh;
+    }
+    ## make new_doc
+    #print "last_chunk is $last_chunk, chunk_count is $count_chunk\n";
+    $dom = XML::LibXML::Document->new('1.0','utf-8');
+    $chunk_element=$dom->createElement('chunk');
+    $chunk_element->setAttribute('number',$count_chunk);
+    $chunk_element->setAttribute('criterion',$criterion_name);
+    if($count_chunk > 2) {
+      $chunk_element->setAttribute('first','1');
+    }
+    if($count_chunk > 1) {
+      $chunk_element->setAttribute('previous',$count_chunk-1);
+    }
+    if($count_chunk < $last_chunk) {
+      $chunk_element->setAttribute('last',$last_chunk);
+    }
+    if($count_chunk < $last_chunk+1) {
+      $chunk_element->setAttribute('next',$count_chunk+1);
+    }
+    $count_chunk++;
+  }
+  my $author_element=$dom->createElement('author');
+  my $id=$author_keys[$count_authors];
+  $author_element->setAttribute('id',$id);
+  $author_element->setAttribute('name',$authors->{$id}->{'name'});
+
+  # 06/01/11
+  # Enter the value of $last_change->{$id} into the field 'last_change_date' in the noma database
+  #  die $last_change->{$id};
+
+
+  ## open database
+  my $noma_db=&AuthorProfile::Common::open_db($noma_db_file);
+  my $record=&AuthorProfile::Common::get_from_db_json($noma_db,$id);
+
+  # 11/03/11
+  # Tracing problem
+  # die Dumper $last_change->{$id},$id if not exists $last_change->{$id};
+
+  $record->{'last_change_date'}=$last_change->{$id};
+  #  print Dumper $record;
+  &AuthorProfile::Common::put_in_db_json($noma_db,$id,$record);
+  &AuthorProfile::Common::close_db($noma_db);
+  ## close database
+  
+  # DEBUG: FOR VERIFICATION
+  #  $noma_db=&AuthorProfile::Common::open_db($noma_db_file);
+  #  $record=&AuthorProfile::Common::get_from_db_json($noma_db,$id);
+  #  &AuthorProfile::Common::close_db($noma_db);
+  #  print "verify record\n";
+  #  die Dumper $record;
+  # END DEBUG
+  
+  my $date_string=time2str('%o of %B %Y', $last_change->{$id});
+  #die $date_string;
+  $author_element->setAttribute('last-change-date',$date_string);
+  $author_element->setAttribute('accepted',$authors->{$id}->{'accepted'});
+  $author_element->setAttribute('refused',$authors->{$id}->{'refused'});
+  $chunk_element->appendChild($author_element);
+  $count_authors++;
+}
+
+## the end
+
+## gather author information
+sub gather_authors_from_profile_dir {
+  my $ap_dir=shift;
+  my $authors;
+  foreach my $file (`find $ap_dir -type f -name '*.xml'`) {
+    chomp $file;
+    #print "processing $file\n";
+    open my $fh, "$file";
+    binmode $fh; # drop all PerlIO layers possibly created by a use open pragma
+    my $doc = eval {
+      XML::LibXML->load_xml(IO => $fh);
+    };
+    if(not $doc) {
+      warn "could not parse $file";
+      next;
+    }
+    $authors=&work_with_doc_public($doc,$authors);
+  }
+  return $authors;
+}
+
+# implementation for private ACIS records
+sub work_with_doc_public {
+  my $doc=shift;
+  my $authors=shift;
+  my $amf_element=$doc->documentElement;
+  ## is this an author?
+  my $count_accepted=0;
+  my $is_author_of=$amf_element->getElementsByTagNameNS($amf_ns,'isauthorof');
+  my @accepted_list = $is_author_of->get_nodelist();
+  foreach my $accepted_element (@accepted_list) {
+    my $add_to_accepted = scalar @{$accepted_element->getElementsByTagNameNS($amf_ns,'text')};
+    $count_accepted=$count_accepted+$add_to_accepted;
+  }
+  my $is_editor_of=$amf_element->getElementsByTagNameNS($amf_ns,'iseditorof');
+  @accepted_list = $is_editor_of->get_nodelist();
+  foreach my $accepted_element (@accepted_list) {
+    my $add_to_accepted = scalar @{$accepted_element->getElementsByTagNameNS($amf_ns,'text')};
+    $count_accepted=$count_accepted+$add_to_accepted;
+  }
+  if(not $count_accepted>0) {
+    ## this is not an author
+    #print "$name is not an author\n";
+    return $authors;
+  }
+  ## count_refused
+  my $count_refused=0;
+  my $refused=$amf_element->getElementsByTagNameNS($acis_ns,'hasnoconnectionto');
+  my @refused_list = $refused->get_nodelist();
+  foreach my $refused_element (@refused_list) {
+    my $add_to_refused = scalar @{$refused_element->getElementsByTagNameNS($amf_ns,'text')};
+    $count_refused=$count_refused+$add_to_refused;
+  }
+  ## the sid of the author is always last
+  my $sid_element= pop @{$amf_element->getElementsByTagNameNS($acis_ns,'shortid')};
+  my $sid=$sid_element->textContent;
+  ## the same is the first
+  my $name_element= shift @{$amf_element->getElementsByTagNameNS($amf_ns,'name')};
+  my $name=$name_element->textContent;
+  ## check last changed_data
+  $authors->{$sid}->{'name'}=$name;
+  $authors->{$sid}->{'accepted'}=$count_accepted;
+  $authors->{$sid}->{'refused'}=$count_refused;
+  $authors->{$sid}->{'last-change-date'}=$last_change->{$sid};
+
+  return $authors;
+}
+
+
+#sub refresh_author_date {
+#  my $sid=shift;
+#  my $last_change=shift;
+#  my $record=&AuthorProfile::Common::get_from_db_json($noma_db,$sid);
+#  my $last_change_on_record;
+#  if(defined($record)) {
+#    $last_change_on_record=$record->{'last_change_date'};
+#  }
+#  else {
+#    $last_change_on_record=0;
+#  }
+#  #$last_change_on_record=0;
+#  #$last_change=0;
+#  if($last_change_on_record == $last_change) {
+#    ## nothing more to do
+#    return;
+#  }
+#  $record->{'last_change_date'}=$last_change;
+#  return &AuthorProfile::Common::put_in_db_json($noma_db,$sid,$record);  
+#}
+    
+# implementation for private ACIS records, obsolete
+#sub work_with_doc_private {
+#  my $doc=shift;
+#  my $authors=shift;
+#  my $data_element=$doc->documentElement;
+#  ## the sid of the author is always last
+#  my $sid_element= pop @{$data_element->getElementsByTagName('sid')};
+#  my $sid=$sid_element->textContent;  
+#  ## the same is the first
+#  my $name_element= shift @{$data_element->getElementsByTagName('name')};
+#  my $name=$name_element->textContent;  
+#  ## is this an author?
+#  my $accepted_element = pop @{$data_element->getElementsByTagName('accepted')};
+#  my $count_accepted = scalar @{$accepted_element->getElementsByTagName('list-item')};
+#  my $refused_element = pop @{$data_element->getElementsByTagName('refused')};
+#  my $count_refused = scalar @{$refused_element->getElementsByTagName('list-item')};
+#  my $emptyarray_element = pop @{$accepted_element->getElementsByTagName('empty-array')};
+#  if($emptyarray_element) {
+#    ## this is not an author
+#    #print "$name is not an author\n";
+#    return $authors;
+#  }
+#  ## check last changed_data
+#  my @owner_elements=$data_element->getElementsByTagName('owner');
+#  if(not scalar @owner_elements) {
+#    warn "no owner element in record with psid $sid\n";
+#    return;
+#  }
+#  my $owner_element=$owner_elements[0];
+#  ## I don't think we use this any longer
+#  my $last_change_element= shift @{$owner_element->getElementsByTagName('last-change-date')};
+#  my $last_change=str2time($last_change_element->textContent);
+#  ## initial registration date is used when no last action is known
+#  my $initial_registration_element= shift @{$owner_element->getElementsByTagName('initial-registered-date')};
+#  my $initial_registration_date=str2time($initial_registration_element->textContent);
+#  $authors->{$sid}->{'name'}=$name;
+#  $authors->{$sid}->{'accepted'}=$count_accepted;
+#  $authors->{$sid}->{'refused'}=$count_refused;
+#  $authors->{$sid}->{'last-change-date'}=$last_change;
+#  $authors->{$sid}->{'initial_registration_date'}=$initial_registration_date;
+#  ## make a note aboeut the change in the noma
+#  if($last_change) {
+#    &refresh_author_date($sid,$last_change);
+#  }
+#  return $authors;
+#}
+
+## a temporary routine to fix json
+sub fix_json_broken_string {
+  my $in=shift;
+  print "fixing $in";
+  #{"ended_calculation":1305992211,"furthest_depth":"2","last_change_date":1284956405,"t_gen_progress":"100","began_calculation":1305992202}
+  $in=~s|^\{||;
+  $in=~s|\}$||;
+  my $out;
+  my @fields=split(/,/,$in);
+  foreach my $field (@fields) {
+    my ($field,$value)=split(/:/,$field);
+    $field=~s|^"||;
+    $field=~s|"$||;
+    $value=~s|^"||;
+    $value=~s|"$||;
+    $out->{$field}=$value;
+  }
+  print Dumper $out;
+  return $out;
+}

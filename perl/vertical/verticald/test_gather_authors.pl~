@@ -1,0 +1,11 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+# Common to all AuthorProfile scripts
+use lib qw( /home/aupro/perl/lib/ );
+use AuthorProfile::Conf;
+
+# my $VERTICALD_PATH="$ENV{'HOME'}/ap/perl/bin/vertical/verticald";
+require "$VERTICALD_PATH/work_with_doc.pl";

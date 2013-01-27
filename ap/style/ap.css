@@ -1,0 +1,91 @@
+/* general classes */
+.hide {visibility: hidden;}
+.floatright {float:right;}
+td, th {padding-left: 10px;}
+th {text-align: left;}
+.author_name_in_authorlist {width: 15em;}
+.last_date_change {width: 15em;}
+a:link span.highlight {background-color: #CC9900}
+span.highlight {background-color: #CC9900}
+
+
+
+/* name: Paper Title */
+/* short: pt */
+/* type: external */
+/* description: link the title of a paper  */
+/* element: span or a
+/* sample: <a class="pt">Towards an architecture for open archive networks in agricultural sciences and technology</a> */
+.pt {color: #996600;}
+
+/* name: Vertical Div*/
+/* short: vd */
+/* sample: <div class="vd"></div> */
+
+/* name: paGination in author Index */
+/* short: gi */
+/* type: internal */
+/* sample: <a class="gi">next</a> */
+
+/* name: Own Author  */
+/* short: oa */
+/* type: internal */
+/* description: the way the same author is written in the author page */
+/* sample: <span class="oa">Imma Subirats</span> */
+
+/* name: Author To aUnex Link  */
+/* short: atul */
+/* type: internal */
+/* description: link from author page to a status 0 aunex */
+/* sample: <q><a class="atul">Salokhe, G.</a></q> */
+
+/* name: Author To aUnex NonLinked  */
+/* short: atunl */
+/* description: absence of link author page to a status -1 aunex */
+/* sample: <q class="atunl">Salokhe, G.</q> */
+
+/* name: Author To Coauthor Linked */
+/* short: atcl */
+/* type: internal */
+/* description: link from author page to a status 2 author */
+/* sample: <a class="atcl">Stephano Anibaldi</a> */
+
+/* name: aUnex To Author Linked */
+/* short: utal */
+/* type: internal */
+/* description: link from aunex page to a registered author */
+/* sample: <a class="utal">Subirats, I.</a> */
+
+/* name: aUnex to aUnex Linked */
+/* short: utul */
+/* description: absence of link author page to a status -1 aunex */
+/* sample: <a class="utul">Paul Levine</a> */
+
+/* name: aUnex to aUnex Non Linked */
+/* short: utunl */
+/* description: absence of link author page to a status -1 aunex */
+/* sample: <q class="utunl">HFC</q> */
+
+/* name: aUnex To Author in Vertical list */
+/* short: utav */
+/* type: internal */
+/* description: link from aunex page to a registered autho */
+/* sample: <a class="utav">Subirats, I.</a> */
+
+/* name: aUnex to aUnex in Vertical list */
+/* short: utuv */
+/* type: internal */
+/* description: link from aunex page to a registered autho */
+/* sample: <q><a class="utuv">Salokhe, G.</a></q> */
+
+/* name: aUnex To Own aUnex in Vertial list */
+/* short: utouv */
+/* type: internal */
+/* description: link from aunex page to a registered autho */
+/* sample: <q class="utouv">Salokhe, G.</q> */
+
+/* 02/25/12 - James */
+#i {
+    margin-top:40px;
+    z-index:-100;
+}

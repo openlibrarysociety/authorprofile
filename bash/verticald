@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# A script serving as a primitive interface for the vertical integration calculations
+
+DATE='/bin/date'
+DATE=`$DATE +%s`
+VERTD="$HOME/ap/perl/bin/verticald.pl"
+LOGPATH="$HOME/ap/var/log/vertical"
+VERTDLOG="$LOGPATH/verticald_$DATE.log"
+VERTSTAT="$HOME/ap/var/vim.json"
+
+if [ ! $1 ]
+then
+    echo "Usage: $0 start | stop"
+    exit
+fi
+
+if [ $1 == 'start' ]
+then
+    mv $LOGPATH/vertical* $LOGPATH/old/.
+    if [ -f $VERTSTAT ]
+    then cp $VERTSTAT $VERTSTAT.old
+    fi
+
+    nohup $VERTD > $VERTDLOG 2>&1 &
+else
+    if [ $1 == 'stop' ]
+        then
+        echo 'to do: kill process $VERTDPID'
+    fi
+fi

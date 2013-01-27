@@ -1,0 +1,20 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use lib qw( /home/mamf/lib/perl /home/mamf/usr/lib/perl );
+
+use Data::Dumper;
+use Sys::RunAlone;
+
+sub main {
+  print("child script successfully invoked\n");
+#  print("press any key to continue...\n");
+#  <STDIN>;
+  return 0;       
+}
+
+&main();
+
+__END__

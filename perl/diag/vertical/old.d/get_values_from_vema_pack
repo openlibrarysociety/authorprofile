@@ -1,0 +1,76 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use BerkeleyDB;
+
+use Data::Dumper;
+use Data::MessagePack;
+
+use Mamf::Common qw(mp_retrieve);
+
+my $home=$ENV{'HOME'};
+my $vema_pack_file="$home/opt/var/vema.tmp.pack";
+
+my $vema=&mp_retrieve($vema_pack_file);
+
+=pod
+
+my $files_db_file="/home/mamf/var/vertical/vema.db";
+
+my %vema_db_h;
+
+tie %vema_db_h, "BerkeleyDB::Hash", 
+  -Filename => $files_db_file;
+#  -Flags => CREATE_DB;
+
+my $vema_db=\%vema_db_h;
+
+#my $vema_db = new BerkeleyDB::Hash
+#  -Filename => $files_db_file,
+#  -Flags    => DB_CREATE
+#  or die "Cannot open $files_db_file: $! $BerkeleyDB::Error\n";
+
+
+=cut
+
+
+
+&main();
+
+sub main {
+#  if(not $ARGV[0]) { return 0; }
+
+  #foreach my $dest (keys %{$vema_db}) {
+  #  print(Dumper(keys %{$vema_db->{$dest}}));
+  #}
+#  print('here');
+#  print(Dumper(Data::MessagePack->unpack($vema_db->{'Paar, H.P.'})));
+  print(Dumper(keys %{$vema}));
+
+#  print Dumper(&get_from_db_mp($vema_db, $ARGV[0]));
+  return 0;
+}
+
+sub get_from_db_mp {
+  my $db=shift; 
+  my $db_key=shift;
+  my $packed;
+  #This was db_put?...
+  #  my $return=$db->db_put($db_key, $packed);
+  my $return=$db->db_get($db_key, $packed);
+  if($return != 0) {
+    #    print "error in db_get: $return\n";
+  }
+  if(not $packed) {
+    return;
+  }
+  my $value=eval{Data::MessagePack->unpack($packed);};
+  my $error=$@;
+  if($error) {
+#    print "error in unpacking: $error\n";
+    return;
+  }
+  return $value;
+}

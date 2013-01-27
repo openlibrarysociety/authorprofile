@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" 
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:html="http://www.w3.org/1999/xhtml">
+  <xsl:include href="common.xslt.xml"/>
+  <!-- this generates HTML from documenation files for files in doc -->
+  <!-- it is used by perl/bin/doc2html --> 
+  <!-- body of documentation list -->
+  <xsl:template name="doc_title">
+    <xsl:value-of select="/html:div/@title"/>
+  </xsl:template>
+  <xsl:template name="doc_body">
+    <h1>
+      <xsl:call-template name="doc_title"/>
+    </h1>
+    <div>
+      <xsl:copy-of select="/html:div/*"/>
+    </div>
+  </xsl:template>
+  <!-- page template -->
+  <xsl:template match="/">
+    <xsl:call-template name="page">
+      <xsl:with-param name="title">
+        <xsl:call-template name="doc_title"/>
+      </xsl:with-param>
+      <xsl:with-param name="main_body">
+        <xsl:call-template name="doc_body"/>
+      </xsl:with-param>
+    </xsl:call-template>
+  </xsl:template>
+</xsl:stylesheet>
+
+    

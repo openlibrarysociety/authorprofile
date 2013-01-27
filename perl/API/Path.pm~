@@ -1,0 +1,20 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+package Path;
+
+sub new {
+  my $class=shift;
+
+  my $self = {'length' => shift,
+              'nodes' => shift,
+              'weight' => shift
+             };
+
+  bless $self,$class;
+  return $self;
+}
+
+1;

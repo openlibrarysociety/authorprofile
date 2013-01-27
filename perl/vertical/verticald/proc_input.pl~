@@ -1,0 +1,12 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+sub proc_input {
+  foreach my $input_var (@ARGV) {
+    &proc_args($input_var);
+  }
+}
+
+1;

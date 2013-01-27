@@ -1,0 +1,10 @@
+#!/usr/bin/env python
+
+# AuthorClaimUser objects
+def populateMongoDBColl(collName='authorClaimUsers'):
+
+    
+
+    pass
+
+populateMongoDBColl

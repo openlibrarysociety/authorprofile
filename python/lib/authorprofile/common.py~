@@ -1,0 +1,27 @@
+from pymongo import Connection
+
+def getMongoDBConn():
+
+    try:
+        conn=Connection()
+        return conn
+    except:
+        #getMongoDBConn()
+        print 'Error: Could not connect to the MongoDB server.'
+
+def getMongoDBColl(dbName,collName,conn):
+
+    try:
+        db = conn[dbName]
+
+    except:
+        print 'Error: Could not connect to the database',dbName
+        exit(1)
+
+    try:
+        coll=db[collName]
+    except:
+        print 'Error: Could not find the collection',collName,'in the database',dbName
+        exit(1)
+
+    return coll

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+James R. Griffin III
+02/25/12
+AuthorProfile
+Open Library Society
+jrgriffiniii@gmail.com
+-->
+<xsl:stylesheet version="1.0"
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:ap="http://authorprofile.org"
+                xmlns:amf="http://amf.openlib.org">
+  <xsl:output method="xml" 
+              indent="yes" 
+              omit-xml-declaration="yes"/>
+
+
+  
+  <!--
+      Stylesheets, jQuery, and the JavaScript file
+      Inserted into the <head/> element
+  -->
+  <xsl:template name="author-name-search-head">
+    <link rel="stylesheet" type="text/css" href="/style/author-name-search.css"/>
+    <script type="text/javascript" src="/script/jquery-1.7.1.min.js"></script>
+    <script type="text/javascript" src="/script/jquery_search.js"></script>
+  </xsl:template>
+  
+  <!--
+      The <input/> elements
+      Inserted into the <body/> element
+  -->
+  <xsl:template name="author-name-search-body">
+    <xsl:param name="author-name"/>
+    <div id="author-name-search">
+      <!--<input type="text" name="q" id="searchinput">
+        <xsl:attribute name="value"><xsl:value-of select="$author-name"/></xsl:attribute>
+      </input>-->
+      <input type="text" name="q" id="searchinput" value="Search for an author"/>
+      <input id="search" onClick="executeSearch();" type="submit" value="Search"/>
+    <div class="suggestions"/><ul/></div>
+  </xsl:template>
+</xsl:stylesheet>

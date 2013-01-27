@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" 
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:amf="http://amf.openlib.org"
+                exclude-result-prefixes="amf #default">
+  <xsl:output method="xml" 
+              indent="yes" 
+              omit-xml-declaration="yes"/>
+  <xsl:include href="common.xslt.xml"/>
+  <!-- a parameter passed by the caller, giving the aunex -->
+  <xsl:param name="aunex"/>
+  <!-- title of the page -->
+  <xsl:template name="page_title">    
+    <xsl:text>Ooops!</xsl:text>
+  </xsl:template>
+  <xsl:template match="/">
+    <!-- defined in common -->
+    <xsl:call-template name="page">
+      <xsl:with-param name="page_title">
+        <!-- defined here -->
+        <xsl:call-template name="page_title"/>
+      </xsl:with-param>
+      <xsl:with-param name="main_body">
+        <!-- defined here -->
+        <xsl:call-template name="error_page"/>
+      </xsl:with-param>
+    </xsl:call-template>
+  </xsl:template>
+  <!-- called by page template in common  -->
+  <xsl:template name="error_page">
+    <div>
+      <xsl:text>An error occurred in the system. It’s not your fault. Here is what’s happened.</xsl:text>
+    </div>
+    <pre>
+      <xsl:value-of select="/error/message"/>
+    </pre>
+    <div>
+      <xsl:text>Here is the query object.</xsl:text>
+    </div>
+    <pre>
+      <xsl:value-of select="/error/query_object"/>
+    </pre>
+  </xsl:template>
+</xsl:stylesheet>

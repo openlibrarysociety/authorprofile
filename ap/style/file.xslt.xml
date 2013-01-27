@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" 
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:html="http://www.w3.org/1999/xhtml">
+  <xsl:include href="common.xslt.xml"/>
+  <!-- body of author list -->
+  <xsl:template name="file_title">
+    <a href="/">AuthorProfile</a>
+    <xsl:text> documentation: file “</xsl:text>
+    <code> 
+      <xsl:value-of select="/file/@name"/>
+    </code>
+    <xsl:text>”</xsl:text>
+  </xsl:template>
+  <xsl:template name="file_body">
+    <h1>
+      <xsl:call-template name="file_title"/>
+    </h1>
+    <hr/>
+    <pre>
+      <xsl:value-of select="/file"/>
+    </pre>
+  </xsl:template>
+  <!-- page template -->
+  <xsl:template match="/">
+    <xsl:call-template name="page">
+      <xsl:with-param name="title">
+        <xsl:call-template name="file_title"/>
+      </xsl:with-param>
+      <xsl:with-param name="main_body">
+        <xsl:call-template name="file_body"/>
+      </xsl:with-param>
+    </xsl:call-template>
+  </xsl:template>
+</xsl:stylesheet>
+
+    

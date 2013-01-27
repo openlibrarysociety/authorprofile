@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" 
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml">
+  <xsl:include href="common.xslt.xml"/>
+  <!-- name of criterion by which authors are listed -->
+  <xsl:param name="criterion_name"/>
+  <!-- number of the chunk -->
+  <xsl:param name="chunk_number"/>
+  <!-- general name for files -->
+  <xsl:param name="general_name"/>
+  <!-- create list title -->
+  <xsl:template name="authorlist_title">
+    <xsl:text>list of authors by </xsl:text>
+    <xsl:value-of select="$criterion_name"/>
+    <xsl:text>, part </xsl:text>
+    <xsl:value-of select="$chunk_number"/>
+  </xsl:template>
+  <!-- body of author list -->
+  <xsl:template name="authorlist_body">
+    <h1>
+      <xsl:call-template name="authorlist_title"/>
+    </h1>
+    <table>
+      <tr>
+        <th>
+          <xsl:text>Author name</xsl:text>
+        </th>
+        <th>
+          <xsl:text>Last profile change</xsl:text>
+        </th>
+        <th>
+          <xsl:text>Accepted Papers</xsl:text>
+        </th>
+        <th>
+          <xsl:text>Refused papers</xsl:text>
+        </th>
+      </tr>
+      <xsl:for-each select="/chunk/author">
+        <tr>
+          <td class="author_name_in_authorlist">
+            <xsl:attribute name="class">
+              <xsl:text>author_name_in_authorlist</xsl:text>
+            </xsl:attribute>
+            <a>
+              <xsl:attribute name="href">
+                <xsl:value-of select="$author_url_start"/>
+                <xsl:value-of select="./@id" />
+                <xsl:text>.html</xsl:text>
+              </xsl:attribute>
+              <xsl:value-of select="./@name" />
+            </a>
+          </td>
+          <td class="last_date_change">
+            <xsl:attribute name="class">
+              <xsl:text>last_date_change</xsl:text>
+            </xsl:attribute>
+            <xsl:value-of select="./@last-change-date" />
+          </td>
+          <td>
+            <xsl:value-of select="./@accepted" />
+          </td>
+          <td>
+            <xsl:value-of select="./@refused" />
+          </td>
+        </tr>
+      </xsl:for-each>
+    </table>
+    <xsl:choose>
+      <xsl:when test="/chunk/@first">
+        <a>
+          <xsl:attribute name="href">
+            <xsl:value-of select="$general_name"/>
+            <xsl:value-of select="/chunk/@first" />
+            <xsl:text>.html</xsl:text>
+          </xsl:attribute>
+          <xsl:text>first</xsl:text>
+        </a>
+      </xsl:when>
+      <xsl:otherwise>
+        <span class="hide">
+          <xsl:text>first</xsl:text>
+        </span>
+      </xsl:otherwise>
+    </xsl:choose>
+    <xsl:choose>
+      <xsl:when test="/chunk/@previous">
+        <a>
+          <xsl:attribute name="href">
+            <xsl:value-of select="$general_name"/>
+            <xsl:value-of select="/chunk/@previous" />
+            <xsl:text>.html</xsl:text>
+          </xsl:attribute>
+          <xsl:text>previous</xsl:text>
+        </a>
+      </xsl:when>
+      <xsl:otherwise>
+        <span class="hide">
+          <xsl:text>previous</xsl:text>
+        </span>
+      </xsl:otherwise>
+    </xsl:choose>
+    <xsl:choose>
+      <xsl:when test="/chunk/@next">
+        <a>
+          <xsl:attribute name="href">
+            <xsl:value-of select="$general_name"/>
+            <xsl:value-of select="/chunk/@next" />
+            <xsl:text>.html</xsl:text>
+          </xsl:attribute>
+          <xsl:text>next</xsl:text>
+        </a>
+      </xsl:when>
+      <xsl:otherwise>
+        <span class="hide">
+          <xsl:text>next</xsl:text>
+        </span>
+      </xsl:otherwise>
+    </xsl:choose>
+    <xsl:choose>
+      <xsl:when test="/chunk/@last">
+        <a>
+          <xsl:attribute name="href">
+            <xsl:value-of select="$general_name"/>
+            <xsl:value-of select="/chunk/@last" />
+            <xsl:text>.html</xsl:text>
+          </xsl:attribute>
+          <xsl:text>last</xsl:text>
+        </a>
+      </xsl:when>
+      <xsl:otherwise>
+        <span class="hide">
+          <xsl:text>last</xsl:text>
+        </span>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  <!-- page template -->
+  <xsl:template match="/">
+    <xsl:call-template name="page">
+      <xsl:with-param name="title">
+        <xsl:call-template name="authorlist_title"/>
+      </xsl:with-param>
+      <xsl:with-param name="main_body">
+        <xsl:call-template name="authorlist_body"/>
+      </xsl:with-param>
+    </xsl:call-template>
+  </xsl:template>
+</xsl:stylesheet>
+
+    

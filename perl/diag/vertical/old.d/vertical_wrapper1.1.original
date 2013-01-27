@@ -1,0 +1,713 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use lib qw( /home/mamf/lib/perl /home/mamf/usr/lib/perl );
+
+use Data::Dumper;
+use XML::LibXML;
+use Date::Format;
+use AuthorProfile::Common qw(open_db 
+                             close_db
+                             get_db_json
+                             put_db_json);
+use Encode;
+use utf8;
+
+binmode(STDOUT,"utf8");
+
+use Sys::RunAlone;
+use Proc::ProcessTable;
+
+# Global signal handlers
+
+#$SIG{CHLD}='IGNORE';
+#$SIG{ALRM} = \&alarm;
+
+# Global vars
+my $g_home_dir=$ENV{'HOME'};
+my $g_acis_dir="$g_home_dir/ap/amf/3lib/am";
+my $g_author_dir="$g_home_dir/opt/amf/3lib/am/";
+
+my $g_noma_db_file="/opt/wotan/home/mamf/opt/var/vertical/noma.db";
+
+my $g_vert_output_dir='/opt/home/mamf/opt/var';
+
+# This is for vertical 1.1
+my $g_vert_script="$g_home_dir/perl/vertical1.1";
+
+my $g_delay=300;
+my $g_maxd=5;
+
+my $g_verbose=1;
+
+my $g_child_procs=undef;
+# The number of instances of the vertical integration data calculation scripts running on the server.
+my $g_vert_procs_running=0;
+# The maximal amount of instances that the vertical integration data calculation script is permitted to run (given the resources of the server).
+my $g_max_running_vert_procs=1;
+
+my $g_vema_db_file;
+my $g_max_nodes;
+my $g_time_limit;
+
+my $g_b_priority;
+
+# The noma ("node master")
+# Note: This is of no immediate concern to the calculation of the vertical integration data.
+# $noma->{[SID]}->{'last_change_date'}
+# $noma->{[SID]}->{'began_calculation'}
+# $noma->{[SID]}->{'ended_calculation'}
+# $noma->{[SID]}->{'furthest_depth'}
+
+# PRIORITY FOR NOMA
+# 1) new authors are calculated first
+# 2) authors for which there are no ended_calculations values are calculated next
+# 3) authors for which the furthest_depth does not match the maxd
+
+# So, for sorting
+# new authors are first pushed to the array
+# then, authors for which there are no ended calculations are sorted
+# THIS INCLUDES ENDED CALCULATIONS THAT ARE OLDER THAN began_calculations
+# higher priority is given to those for which the begin time is older
+# as these authors are sorted, they must be popped from an array of some sort
+# those authors for which there were ended calculations are then further sorted
+# higher priority is given to those for whom the ended_calculations values are older
+# highest priority is given to those authors for whom the furthest depth is the lowest
+# these must be popped as well
+# finally, those remaining authors sorted by ended_calculations values are calculated for 
+
+sub refresh_vert_procs_running {
+
+  my $t = new Proc::ProcessTable;
+  my @vert_pids;
+  
+  # First obtain the pid's of all running instances of the vertical script...
+  foreach my $p (@{$t->table}) {
+    if(($p->{'fname'} eq 'vertical') or ($p->{'fname'} eq 'vertical1.1')) {
+      print "Found an instance of the vertical script with a process ID of ", $p->{'pid'}, " running.\n";
+      push(@vert_pids, $p->{'pid'});
+    }
+  }
+  
+  # ...and then obtain the authors for which the vertical integration data is currently being calculated.
+  
+  #my @running_authors;
+  my $running_authors;
+  
+  foreach my $vert_pid (@vert_pids) {
+    foreach my $p (@{$t->table}) {
+      if($p->{'pid'} eq $vert_pid) {
+        # This is tedious simply due to the impossibility of clearly distinguishing flags and options from filenames on the command line invocation of the vertical script.
+        my $vert_options=$p->{'cmndline'};
+        $vert_options=~s|/usr/bin/perl||;
+        $vert_options=~s|/home/mamf/perl/vertical||;
+        my $running_author=$vert_options;
+        $vert_options=~s|/home/mamf/opt/amf/3lib/am/.*$||;
+        $vert_options=~s|^\s*||;
+        $vert_options=~s|\s*$||;
+        
+        $running_author=~s|/home/mamf/opt/amf/3lib/am/||;
+        $running_author=~s|.amf.xml||;
+        $running_author=~s|././||;
+        $running_author=~s|\Q$vert_options\E||;
+        $running_author=~s|^\s*||;
+        
+        #        push(@running_authors, $running_author);
+        # If there are already instances of the vertical script running for this author $running_author, issue a warning to STDERR.
+        if(exists($running_authors->{$running_author})) {
+          warn("Warning: More than one instance of the vertical script found to be running for $running_author!\n");
+          next;
+        }
+        $running_authors->{$running_author}=1;
+      }
+    }
+  }
+
+#print(Dumper $running_authors);
+
+#  $g_vert_procs_running=keys(%{$running_authors});
+  return $running_authors;
+}
+
+sub sort_authors {
+  my $authors=shift;
+  my $authors_2=$authors;
+  my $sort_value=shift;
+  # Boolean flag: An undefined value or a value of 0 (the default parameter) sorts with priority being given to the maximum value, a value of 1 sorts with priority being given to the minimum value
+  my $b_max_min=shift;
+  my @sorted_authors;
+  my $sorted_authors_h;
+  my $priority_value=0;
+  my $priority_author;
+
+#  print(Dumper $sort_value);
+#  exit;
+
+  foreach my $author_2 (keys %{$authors_2}) {
+    foreach my $author (keys %{$authors}) {
+      if(not exists $authors->{$author}->{$sort_value}) {
+        die "ERROR: sort_authors: \$authors hash does not contain the key $sort_value!\n";
+      }
+      if(not $priority_value) {
+        # Initialize priority_value with the value of $authors->{[FIRST AUTHOR]}->{$sort_value}
+        $priority_value=$authors->{$author}->{$sort_value};
+        # Initialize priority_author with the first author
+        $priority_author=$author;
+        next;
+      }
+      # Sort by max
+      if(not $b_max_min) {
+        if($authors->{$author}->{$sort_value} > $priority_value) {
+          $priority_value=$authors->{$author}->{$sort_value};
+          $priority_author=$author;
+          next;
+        }
+      }
+      # Sort by min
+      else {
+        if($authors->{$author}->{$sort_value} < $priority_value) {
+          $priority_value=$authors->{$author}->{$sort_value};
+          $priority_author=$author;
+          next;
+        }
+      }
+    }
+#    print("max value: $priority_value\n");
+    push(@sorted_authors, $priority_author);
+#    push(@{$sorted_authors->{'authors'}}, $recent_author);
+    #    push(@{$sorted_authors->{'dates'}}, $max_value);
+    delete($authors->{$priority_author});
+    $priority_value=0;
+  }
+#  exit;
+  return @sorted_authors;
+}
+
+
+sub main {
+
+  &proc_input;
+
+  # Loop infinitely for the wrapper
+  while(1) {
+    # Obtain the SID's of all registered authors:
+    my @author_sids=gather_authors_from_profile_dir($g_acis_dir);
+    
+    if(not @author_sids) {
+      die("ERROR: Could not find authors!\n");
+    }
+
+    my $h_author_sids;
+    
+    # Loop through the SID of each registered author
+    foreach my $author_sid (@author_sids) {
+      $h_author_sids->{$author_sid}=1;
+    }
+    
+    # Obtain the authors for which the vertical integration calculations haven't been performed.
+    my @new_authors;
+    
+    #    my $author_sid=undef;
+    
+    my $author_record=undef;
+    
+    #  $author_record=&AuthorProfile::Common::get_from_db_json($noma_db, $author_sid);
+    
+    my $authors_h;
+    
+    my @authors;
+    
+    my $h_new_authors;
+    #    foreach my $author_sid (@author_sids) {
+    foreach my $author_sid (keys %{$h_author_sids}) {
+      ## open database
+      my $noma_db=&AuthorProfile::Common::open_db($g_noma_db_file);
+      if(not $noma_db) {
+        warn "Error! Vertical integration calculation record matrix \"node master (noma) \" database file $g_noma_db_file could not be opened!\n";
+        next;
+      }
+      $author_record=&AuthorProfile::Common::get_from_db_json($noma_db, $author_sid);
+      ## close database
+      &AuthorProfile::Common::close_db($noma_db);
+      if(not defined($author_record)) {
+        warn("No entry for $author_sid!\n");
+        next;
+      }
+        
+      # Obtain the newest authors
+      if(not defined($author_record->{'began_calculation'}) and not defined($author_record->{'ended_calculation'})) {
+        if($g_verbose > 0) { print("Discovered new author $author_sid.\n"); } 
+        # Avoid those authors for which ap_authorlist has not been run
+        if(not defined($author_record->{'last_change_date'})) {
+          warn("No last_change_date for $author_sid!\n");
+          next;
+        }
+        # Sort by times stored for the last ended calculation
+        #        push(@new_authors, $author_sid);
+        $h_new_authors->{$author_sid}=$author_record;
+        #        $h_new_authors->{$author_sid}->{'last_change_date'}=$author_record->{'last_change_date'};
+      }
+    }
+    
+    
+    
+    #    if(not defined($authors)) {
+    
+    #    if(@new_authors) {
+    if(defined $h_new_authors) {
+      # Sort any new authors found
+      my @sorted_new_authors=&sort_authors($h_new_authors, 'last_change_date');
+      undef $h_new_authors;
+      # Push all sorted new authors into the authors array first (highest priority)
+      foreach my $sorted_new_author (@sorted_new_authors) {
+        push(@authors, $sorted_new_author);
+        # Delete the hash key
+        delete($h_author_sids->{$sorted_new_author});
+      }
+    }
+    
+    my $h_unfinished_authors;
+    
+    #    my @unfinished_authors;
+    
+    #    foreach my $author_sid (@author_sids) {
+    foreach my $author_sid (keys %{$h_author_sids}) {
+      ## open database
+      my $noma_db=&AuthorProfile::Common::open_db($g_noma_db_file);
+      $author_record=&AuthorProfile::Common::get_from_db_json($noma_db, $author_sid);
+      ## close database
+      &AuthorProfile::Common::close_db($noma_db);
+      if(not defined($author_record)) {
+        warn("No entry for $author_sid!\n");
+        next;
+      }
+      if(not exists($author_record->{'began_calculation'}) or not $author_record->{'began_calculation'} or not defined $author_record->{'began_calculation'}) {
+        die("\$h_author_sids not properly purged of SID's belonging to new authors!\n");
+      }
+      # Obtain authors for which the vertical integration calculations have never finished
+      if(not exists($author_record->{'ended_calculation'}) or not $author_record->{'ended_calculation'} or not defined($author_record->{'ended_calculation'})) {
+        if($g_verbose > 0) { print("The vertical integration calculations have never finished for author $author_sid.\n"); }
+        # Sort by times stored for the last ended calculation
+        $h_unfinished_authors->{$author_sid}=$author_record;
+        #        $authors->{$author_sid}->{'last_change_date'}=$author_record->{'last_change_date'};
+      }
+    }
+    
+    if(defined $h_unfinished_authors) {
+      # Sort any new authors found
+      my @sorted_unfin_auths=&sort_authors($h_unfinished_authors, 'began_calculation');
+      undef $h_unfinished_authors;
+      # Push all sorted new authors into the authors array first (highest priority)
+      foreach my $sorted_unfin_auth (@sorted_unfin_auths) {
+        push(@authors, $sorted_unfin_auth);
+        # Delete the hash key
+        delete($h_author_sids->{$sorted_unfin_auth});
+      }
+    }
+    
+    # Retrieve those unfinished authors for which the last vertical integration calculations did not finish
+    foreach my $author_sid (keys %{$h_author_sids}) {
+      ## open database
+      my $noma_db=&AuthorProfile::Common::open_db($g_noma_db_file);
+      $author_record=&AuthorProfile::Common::get_from_db_json($noma_db, $author_sid);
+      ## close database
+      &AuthorProfile::Common::close_db($noma_db);
+      if(not defined($author_record)) {
+        warn("No entry for $author_sid!\n");
+        next;
+      }
+      if(not exists($author_record->{'began_calculation'}) or not $author_record->{'began_calculation'} or not defined($author_record->{'began_calculation'})) {
+        die "\$h_author_sids not properly purged of SID's belonging to new authors!\n";
+      }
+      if(not exists($author_record->{'ended_calculation'}) or not $author_record->{'ended_calculation'} or not defined($author_record->{'ended_calculation'})) {
+        die "\$h_author_sids not properly purged of SID's belonging to authors for which the vertical integration calculations have never finished!\n";
+      }
+      if($author_record->{'began_calculation'} > $author_record->{'ended_calculation'}) {
+        # Sort by times stored for the last ended calculation
+        if($g_verbose > 0) { print("The last vertical integration calculations for author $author_sid did not finish.\n"); }
+        $h_unfinished_authors->{$author_sid}=$author_record;
+      }
+    }
+    
+    if(defined $h_unfinished_authors) {
+      # Sort any new authors found
+      my @sorted_unfin_auths=&sort_authors($h_unfinished_authors, 'began_calculation');
+      undef $h_unfinished_authors;
+      # Push all sorted new authors into the authors array first (highest priority)
+      foreach my $sorted_unfin_auth (@sorted_unfin_auths) {
+        push(@authors, $sorted_unfin_auth);
+        # Delete the hash key
+        delete($h_author_sids->{$sorted_unfin_auth});
+      }
+    }
+    
+    my $h_fin_auths;
+    
+    # Retrieve those unfinished authors for which the last vertical integration calculations did not finish
+    foreach my $author_sid (keys %{$h_author_sids}) {
+      ## open database
+      my $noma_db=&AuthorProfile::Common::open_db($g_noma_db_file);
+      $author_record=&AuthorProfile::Common::get_from_db_json($noma_db, $author_sid);
+      ## close database
+      &AuthorProfile::Common::close_db($noma_db);
+      if(not defined($author_record)) {
+        warn("No entry for $author_sid!\n");
+        next;
+      }
+      if(not exists($author_record->{'began_calculation'}) or not $author_record->{'began_calculation'} or not defined($author_record->{'began_calculation'})) {
+        die "\$h_author_sids not properly purged of SID's belonging to new authors!\n";
+      }
+      if(not exists($author_record->{'ended_calculation'}) or not $author_record->{'ended_calculation'} or not defined($author_record->{'ended_calculation'})) {
+        die "\$h_author_sids not properly purged of SID's belonging to authors for which the vertical integration calculations have never finished!\n";
+      }
+      if($author_record->{'began_calculation'} > $author_record->{'ended_calculation'}) {
+        die "\$h_author_sids not properly purged of SID's belonging to authors for which there are unfinished vertical integration calculations!\n";
+      }
+      if(not exists($author_record->{'furthest_depth'}) or not $author_record->{'furthest_depth'} or not defined($author_record->{'furthest_depth'})) {
+        warn("'furthest_depth' empty for $author_sid!\n");
+        next;
+      }
+      if($g_verbose > 0) { print("The previous vertical calculations for $author_sid finished successfully.\n"); }
+      $h_fin_auths->{$author_sid}=$author_record;
+    }
+    
+    if(defined $h_fin_auths) {
+      # Sort unfinished authors first by depth explored (with the highest priority being given to those who have explored the least into the network)
+      my @sorted_fin_auths_by_depth=&sort_authors($h_fin_auths, 'furthest_depth', 1);
+      foreach my $sorted_fin_auth (@sorted_fin_auths_by_depth) {
+        push(@authors, $sorted_fin_auth);
+        delete($h_fin_auths->{$sorted_fin_auth});
+        
+        # Delete the hash key
+        delete($h_author_sids->{$sorted_fin_auth});
+      }
+      my @sorted_fin_auths_by_ended=&sort_authors($h_fin_auths, 'ended_calculation', 1);
+      undef $h_fin_auths;
+      # Push all sorted new authors into the authors array first (highest priority)
+      foreach my $sorted_fin_auth (@sorted_fin_auths_by_ended) {
+        push(@authors, $sorted_fin_auth);
+        # Delete the hash key
+        delete($h_author_sids->{$sorted_fin_auth});
+      }
+    }
+    if($g_verbose > 0) { print('A total of ', scalar @authors, " authors prioritized for vertical integration calculations.\n"); }
+    
+    # Sort by times stored for the last ended calculation.
+    
+    my $max_value=undef;
+    my $recent_author=undef;
+    
+    #    my $total_authors = scalar(keys %{$authors});
+    my $total_authors=$#authors;
+    my $author_counter = 0;
+    
+    # So, for sorting
+    # new authors are first pushed to the array
+    # then, authors for which there are no ended calculations are sorted
+    # THIS INCLUDES ENDED CALCULATIONS THAT ARE OLDER THAN began_calculations
+    # higher priority is given to those for which the begin time is older
+    # as these authors are sorted, they must be popped from an array of some sort
+    # those authors for which there were ended calculations are then further sorted
+    # higher priority is given to those for whom the ended_calculations values are older
+    # highest priority is given to those authors for whom the furthest depth is the lowest
+    # these must be popped as well
+    # finally, those remaining authors sorted by ended_calculations values are calculated for 
+    
+    my $current_author;
+    
+    my $t = new Proc::ProcessTable;
+    my @vert_pids;
+    
+    # First obtain the pid's of all running instances of the vertical script...
+    foreach my $p (@{$t->table}) {
+      if($p->{'fname'} eq 'vertical') {
+        push(@vert_pids, $p->{'pid'});
+      }
+    }
+    
+    # ...and then obtain the authors for which the vertical integration data is currently being calculated.
+    
+    #my @running_authors;
+    my $running_authors;
+    
+    foreach my $vert_pid (@vert_pids) {
+      foreach my $p (@{$t->table}) {
+        if($p->{'pid'} eq $vert_pid) {
+          # This is tedious simply due to the impossibility of clearly distinguishing flags and options from filenames on the command line invocation of the vertical script.
+          my $vert_options=$p->{'cmndline'};
+          $vert_options=~s|/usr/bin/perl||;
+          $vert_options=~s|/home/mamf/perl/vertical||;
+          my $running_author=$vert_options;
+          $vert_options=~s|/home/mamf/opt/amf/3lib/am/.*$||;
+          $vert_options=~s|^\s*||;
+          $vert_options=~s|\s*$||;
+          
+          $running_author=~s|/home/mamf/opt/amf/3lib/am/||;
+          $running_author=~s|.amf.xml||;
+          $running_author=~s|././||;
+          $running_author=~s|\Q$vert_options\E||;
+          $running_author=~s|^\s*||;
+          
+          #        push(@running_authors, $running_author);
+          # If there are already instances of the vertical script running for this author $running_author, issue a warning to STDERR.
+          if(exists($running_authors->{$running_author})) {
+            warn("Warning: More than one instance of the vertical script found to be running for $running_author!\n");
+            next;
+          }
+          $running_authors->{$running_author}=1;
+        }
+      }
+    }
+    
+    # Set the index for running instances of the vertical script to the number of running authors.
+    $g_vert_procs_running=keys(%{$running_authors});
+    
+    my $vert_output;
+    
+    foreach my $author (@authors) {
+      # If this author doesn't currently have an instance of the vertical script running...
+      if(not exists($running_authors->{$author})) {
+        # ...and if the maximal instances of the vertical script hasn't been reached yet...
+        print "The vertical calculations are not currently being performed for $author.\n";
+        if($g_vert_procs_running < $g_max_running_vert_procs) {
+
+          ## open database
+          my $noma_db=&AuthorProfile::Common::open_db($g_noma_db_file);
+          $author_record=&AuthorProfile::Common::get_from_db_json($noma_db, $author);
+
+          ## close database
+          &AuthorProfile::Common::close_db($noma_db);
+          my $depth=2;
+          if($author_record) {
+            if((exists $author_record->{'furthest_depth'} and $author_record->{'furthest_depth'} >= 2) and ($author_record->{'furthest_depth'} + 1 <= $g_maxd)) {
+              $depth=$author_record->{'furthest_depth'} + 1;
+            }
+            elsif(exists $author_record->{'furthest_depth'} and $author_record->{'furthest_depth'} <= 0) {
+              warn "furthest_depth value corrupt for $author!\n";
+            }
+          }
+          else { print "No obtain noma record for $author.\n"; }
+          my $vert_output_file=$g_vert_output_dir . '/vertical1.1_output_' . $author . "_$depth" . '_' . time() . '.dump';
+          my $acis_profile=$author;
+          $acis_profile=~s|^p||;
+          $acis_profile=~s|\d$||;
+          $acis_profile=~s|\B|/|g;
+          $acis_profile = $g_author_dir . $acis_profile . '/' . $author . '.amf.xml';
+          if(not -f $acis_profile) {
+            warn("Error: Could not find file $acis_profile - skipping $author...\n");
+            next;
+          }
+          my $vert_script_invoc=$g_vert_script . ' --no-edges --maxd=' . $depth . ' ' . $acis_profile . ' > ' . $vert_output_file . ' 2>&1 &';
+          
+          # ...then launch another instance of the vertical script...
+          #          eval { $vert_output=`/home/mamf/perl/test_vert_wrapper_child >test_vert_wrap.dump 2&>1 &`; };
+          eval {
+            $vert_output=`$vert_script_invoc`;
+          };
+          if($@) {
+            warn("Error: vertical integration calculation script invocation returned the following error\(s\): $! !\n");
+            next;
+          }
+          # ...and, if the script is running properly, increment the number of vertical instances running.
+
+          # The value of $vert_output does NOT necessarily indicate that the script has been launched successfully!
+
+          $running_authors=&refresh_vert_procs_running;
+          $g_vert_procs_running=scalar keys(%{$running_authors});
+          
+#          if($vert_output) {
+#            print "The vertical integration calculations are currently being performed for $author at ", time, "\n";
+#            $g_vert_procs_running++;
+#          }
+#          else {
+#            warn("Error: vertical integration calculation script invocation returned an undefined value!\n");
+#            next;
+#          }
+          print("Currently running $g_vert_procs_running instances of the vertical integration calculation script....\n");
+        }
+        else {
+          print("Maximum instances of the vertical integration calculation script are now running.\n");
+          print("Next author to be calculated when a script instances finishes: $author\n");
+          print("Waiting for an instance of the vertical integration calculation script to finish...\n");
+          
+          while($g_vert_procs_running >= $g_max_running_vert_procs) {
+            sleep($g_delay);
+            $running_authors=&refresh_vert_procs_running;
+            $g_vert_procs_running=scalar keys(%{$running_authors});
+            next;
+          }
+          last;
+        }
+      } # end of $running_authors->{$sorted_author} foreach loop
+    } # end of $sorted_authors->{'authors'} foreach loop
+    # At this point, every single author prioritized has been cycled through
+  } # end of defined(@author_sids) while loop
+  # Once this loop has been run through, the author prioritization process begins anew...
+}
+
+
+&main();
+
+#IMPORTED FROM OTHER SCRIPTS
+
+## gather author information
+sub gather_authors_from_profile_dir {
+  my $profile_dir=shift;
+  my @author_sids;
+  foreach my $file (`find $profile_dir -type f -name '*.xml'`) {
+    chomp $file;
+    open my $fh, "$file";
+    binmode $fh; # drop all PerlIO layers possibly created by a use open pragma
+    my $doc = eval {XML::LibXML->load_xml(IO => $fh);};
+    if(not $doc) {
+      warn "could not parse $file";
+      next;
+    }
+    &work_with_doc($doc,\@author_sids);
+  }
+  return @author_sids; 
+}
+
+## write XML document
+sub work_with_doc {
+  my $doc=shift;
+  my $author_sids=shift;
+#  print(Dumper @$author_sids);
+#  exit;
+  my $data_element=$doc->documentElement;
+  ## the sid of the author is always last
+  my $sid_element= pop @{$data_element->getElementsByTagName('sid')};
+  my $sid=$sid_element->textContent;
+  ## is this an author?
+  my $accepted_element = pop @{$data_element->getElementsByTagName('accepted')};
+  my $emptyarray_element = pop @{$accepted_element->getElementsByTagName('empty-array')};
+  if($emptyarray_element) {
+    ## this is not an author
+    #print "$name is not an author\n";
+    return undef;
+  }
+  push(@$author_sids, $sid);
+  return 1;
+}
+
+# Copied from vertical1.1
+
+sub proc_args {
+
+  my $input_var=shift;
+
+##################################
+# Exact string comparisons
+##################################
+
+  if($input_var eq '-q' or $input_var eq '--quiet') {
+    $g_verbose=0;
+    return;
+  }
+
+##################################
+# Regexp operations
+##################################
+
+  if($input_var=~m|--vertical-database=|) {
+    my $vema_db_file=$input_var;
+    $vema_db_file=~s|--vertical-database=||;
+    if(not -f $vema_db_file) {
+      $vema_db_file=~s|^~|$g_home_dir|;
+      if(not -f $vema_db_file) {
+        warn("File $vema_db_file doesn't exist!\n");
+        return;
+      }
+    }
+    if($g_verbose) { print "Vertical database file set to $vema_db_file\n"; }
+    $g_vema_db_file=$vema_db_file;
+    return;
+  }
+  if($input_var=~m|--maxd=|) {
+    my $maxd=$input_var;
+    $maxd=~s|--maxd=||;
+    if(not $maxd) {
+      warn("No maximum distance passed!\n");
+      return;
+    }
+    $g_maxd=$maxd;
+    return;
+  }
+  if($input_var=~m|-d|) {
+    my $maxd=$input_var;
+    $maxd=~s|-d||;
+    if(not $maxd) {
+      warn("No maximum distance passed!\n");
+      return;
+    }
+    if($g_verbose) { print "Maximum distance set to $maxd\n"; }
+    $g_maxd=$maxd;
+    return;
+  }
+  if($input_var=~m|-n|) {
+    my $maxn=$input_var;
+    $maxn=~s|-n||;
+    if(not $maxn) {
+      warn("No maximum distance passed!\n");
+      return;
+    }
+    if($g_verbose) { print "Node limit set to $maxn nodes\n"; }
+    $g_max_nodes=$maxn;
+    return;
+  }
+  if($input_var=~m|--time-limit=|) {
+    my $maxt=$input_var;
+    $maxt=~s|--time-limit=||;
+    if(not $maxt) {
+      warn("No time limit passed!\n");
+      return;
+    }
+    if($g_verbose) { print "Time limit set to $maxt seconds\n"; }
+    $g_time_limit=$maxt;
+    return;
+  }
+  if($input_var=~m|-t|) {
+    my $maxt=$input_var;
+    $maxt=~s|-t||;
+    if(not $maxt) {
+      warn("No time limit passed!\n");
+      return;
+    }
+    if($g_verbose) { print "Time limit set to $maxt seconds\n"; }
+    $g_time_limit=$maxt;
+    return;
+  }
+
+##################################
+
+  warn("Unrecognized argument '$input_var' passed - ignoring this!\n");
+  return;
+}
+
+sub proc_input {
+  foreach my $input_var (@ARGV) {
+    &proc_args($input_var);
+  }
+}
+
+
+
+#$SIG{'CHLD'} = sub {
+  # don't change $! and $? outside handler
+#  local ($!,$?);
+#  print("isthisinvoked\n");
+#  exit;
+#  my $pid = waitpid(-1, 'WNOHANG');
+#  if($pid == -1) { return; }
+#  unless(defined $g_child_procs->{$pid}) { return; }
+#  delete $g_child_procs->{$pid};
+  #  cleanup_child($pid, $?);
+#};
+
+sub alarm {
+  die("alarm!\n");
+}
+
+__END__

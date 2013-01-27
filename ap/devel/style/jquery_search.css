@@ -1,0 +1,47 @@
+/*
+  James R. Griffin III
+  02/25/12
+  AuthorProfile
+  Open Library Society
+  jrgriffiniii@gmail.com
+*/
+
+#searchinput {
+    height:24px;
+    font-size: 16px;
+    -moz-border-radius: 5px;
+    -webkit-border-radius: 5px;
+    border: 1px solid #999;
+    width: 320px;
+    color: #999
+}
+
+.suggestions {margin-top:-16px}
+
+.suggestion {
+
+	list-style:none;
+	-moz-border-radius: 5px;
+	-webkit-border-radius: 5px;
+	border:1px solid #999;
+	width: 310px;
+	height:20px;
+
+	background-color:white;
+	color:#666;
+
+	padding: 5px;
+	float:left;
+}
+
+.load{
+background-image:url('../images/ajax-loader.gif');
+background-position:300px 4px;
+background-repeat:no-repeat
+}
+
+#container {
+
+    height:188px;
+    width: 396px
+}

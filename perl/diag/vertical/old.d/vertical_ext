@@ -1,0 +1,124 @@
+#!/usr/bin/perl
+
+## enforce strict pragma
+use strict;
+## warn about possible problem
+use warnings;
+
+use lib qw( /home/mamf/lib/perl /home/mamf/usr/lib/perl );
+
+## used modules, in alphabetical order
+use BerkeleyDB;
+use Data::Dumper;
+use File::Basename;
+use File::Path qw(make_path);
+use AuthorProfile::Auvert qw( authorname_to_filename
+                              normalize_name );
+use Mamf::Common qw( mp_retrieve
+                     get_root_from_file
+                     mp_store
+                     put_in_db_mp
+                     get_from_db_mp );
+#use AuthorProfile::Common qw( add_status
+#                              get_aunexes_per_docid
+#                              strip_ap_filename );
+use AuthorProfile::Commontok2 qw( add_status
+                                  get_aunexes_per_docid
+                                  strip_ap_filename );
+
+use File::Slurp;
+use IO::File;
+use Data::MessagePack;
+use Text::Levenshtein qw( distance );
+use XML::LibXML;
+use XML::LibXSLT;
+
+use Carp::Assert;
+use AuthorProfile::Networktok qw( vema_db_retrieve
+                                  store_vema_values
+                                  compare_nodes_using_poma );
+
+use Date::Format;
+use List::Util qw(shuffle);
+use File::Temp qw/ tempfile tempdir /;
+use File::Compare;
+use File::Copy;
+
+use Encode;
+use utf8;
+
+binmode(STDOUT,"utf8");
+######################################
+
+## namespace constants
+my $amf_ns="http://amf.openlib.org";
+my $acis_ns="http://acis.openlib.org";
+my $xml_ns="";
+
+######################################
+
+# LibXML global handlers. 
+my $dom=XML::LibXML->new();
+my $xslt = XML::LibXSLT->new();
+$dom->keep_blanks(0);
+# 01/07/11 - James: To increase efficiency, just use one set of global handles.
+my $doc=undef;
+my $root_elem=undef; 
+my $parser=XML::LibXML->new();
+
+######################################
+
+# Environmental variables
+
+my $home_dir=$ENV{'HOME'};
+
+######################################
+
+# Input directory and file paths
+my $auma_pack_file="$home_dir/opt/var/auma.pack";
+my $poma_pack_file="$home_dir/opt/var/poma.pack";
+my $acis_dir="$home_dir/opt/amf/3lib/am";
+my $ap_dir="/opt/home/mamf/opt/amf/ap";
+
+my $vertical_script="$home_dir/perl/vertical";
+
+my $dump_dir="/opt/home/mamf/opt/var";
+
+# Output directory and file paths
+my $vema_db_file="/opt/wotan/home/mamf/opt/var/vertical/vema.db";
+
+my $maxd=3;
+
+sub main {
+    my @files=`find $acis_dir -name *.amf.xml`;
+
+
+
+    my $counter=2;
+    while($counter <= $maxd) {
+      foreach my $file (@files) {
+        chomp $file;
+
+        my $sid=$file;
+
+        $sid=~s|/home/mamf/opt/amf/3lib/am/||;
+        $sid=~s|.amf.xml||;
+        $sid=~s|././||;
+        #    $running_author=~s|\Q$vert_options\E||;
+        $sid=~s|^\s*||;
+
+        print("Calculating the vertical integration data for $file at distance $counter...\n");
+        my $dump_file.= $dump_dir . '/vertical_output.' . $sid . time() . '.dump';
+        my $vert_results=`$vertical_script --no-edges --maxd=$counter $file >$dump_file 2>&1`;
+      }
+      $counter++;
+    }
+    return 0;
+  }
+
+#########################
+
+# The invocation of the main() function.
+&main();
+
+#########################

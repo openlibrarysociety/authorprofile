@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" 
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:amf="http://amf.openlib.org"
+                exclude-result-prefixes="amf #default">
+  <xsl:output method="xml" 
+              indent="yes" 
+              omit-xml-declaration="yes"/>
+  <xsl:include href="common.xslt.xml"/>
+  <!-- title of the page -->
+  <xsl:template name="profile_title">    
+    <xsl:text>AuthorProfile for </xsl:text>
+    <xsl:value-of select="/amf:amf/amf:person[1]/amf:name[1]"/>
+  </xsl:template>
+  <!-- main body of the page, after main heading -->
+  <xsl:template name="profile_body">
+    <h1>
+      <xsl:text>AuthorProfile for </xsl:text>
+      <xsl:choose>
+      <xsl:when test="/amf:amf/amf:person[1]/amf:homepage[1]">
+        <a>
+          <xsl:attribute name="href">
+            <xsl:value-of select="/amf:amf/amf:person[1]/amf:homepage[1]"/>
+          </xsl:attribute>
+          <xsl:value-of select="/amf:amf/amf:person[1]/amf:name[1]"/>
+        </a>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:value-of select="/amf:amf/amf:person[1]/amf:name[1]"/>
+      </xsl:otherwise>
+      </xsl:choose>
+    </h1>
+    <xsl:for-each select="/amf:amf/amf:person[1]/amf:isauthorof/amf:text">
+      <!-- defined in common -->
+      <xsl:call-template name="text">
+        <xsl:with-param name="in"
+                        select="."/>
+      </xsl:call-template>
+    </xsl:for-each>
+  </xsl:template>
+  <!-- page template defined in common -->
+  <xsl:template match="/">
+    <xsl:call-template name="page">
+      <xsl:with-param name="title">
+        <xsl:call-template name="profile_title"/>
+      </xsl:with-param>
+      <xsl:with-param name="main_body">
+        <xsl:call-template name="profile_body"/>
+      </xsl:with-param>
+    </xsl:call-template>
+  </xsl:template>
+</xsl:stylesheet>

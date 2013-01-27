@@ -1,0 +1,21 @@
+#!/usr/bin/python
+
+import signal
+from os import getppid,kill
+from time import sleep
+from multiprocessing import Process
+
+def proc():
+    #print getpid()
+    print 'killing'
+    kill(getppid(),signal.SIGKILL)
+    sleep(1)
+    
+#print getpid()
+p=Process(target=proc)
+p.start()
+print 'printing'
+sleep(5)
+#p.join()
+
+

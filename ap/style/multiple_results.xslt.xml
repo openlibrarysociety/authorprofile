@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" 
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:amf="http://amf.openlib.org"
+                exclude-result-prefixes="amf #default">
+  <xsl:output method="xml" 
+              indent="yes" 
+              omit-xml-declaration="yes"/>
+  <xsl:include href="common.xslt.xml"/>
+  <xsl:template name="multiple_results_title">    
+    <xsl:text>There are </xsl:text>
+    <xsl:value-of select="count(//author)"/>
+    <xsl:text> authors found by your search for “</xsl:text>
+    <xsl:value-of select="/results/@to_find"/>
+    <xsl:text>”</xsl:text>
+  </xsl:template>
+  <xsl:template name="multiple_results_body">
+    <h1>
+      <xsl:call-template name="multiple_results_title"/>
+    </h1>
+  </xsl:template>
+  <!-- a found author --> 
+  <xsl:template name="found_author">
+    <a>
+      <xsl:attribute name="href">
+        <xsl:text>http://authorprofile.org/</xsl:text>
+        <xsl:value-of select="./@au_id"/>
+      </xsl:attribute>
+      <xsl:choose>
+        <xsl:when test="./name/normal">
+          <xsl:for-each select="name/*">
+            <xsl:call-template name="show_highlight"/>
+          </xsl:for-each>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:value-of select="./name"/>
+        </xsl:otherwise>
+      </xsl:choose>
+    </a>
+    <xsl:if test="not(./name/normal)">
+      <xsl:text> (</xsl:text>
+      <xsl:for-each select="name_variation">
+        <xsl:if test="position()=1">
+          <xsl:for-each select="*">
+            <xsl:call-template name="show_highlight"/>
+          </xsl:for-each>
+        </xsl:if>
+      </xsl:for-each>
+      <xsl:text>)</xsl:text>
+    </xsl:if>
+  </xsl:template>
+  <!-- shows highlighte name -->
+  <xsl:template name="show_highlight">
+    <xsl:choose>
+      <xsl:when test="name(.)='normal'">
+        <xsl:value-of select="."/>
+      </xsl:when>
+      <xsl:otherwise>
+        <span class="highlight">
+          <xsl:value-of select="."/>
+        </span>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  <!-- page template -->
+  <xsl:template match="/">
+    <xsl:call-template name="page">
+      <xsl:with-param name="title">
+        <xsl:call-template name="multiple_results_title"/>
+      </xsl:with-param>
+      <xsl:with-param name="main_body">
+        <xsl:call-template name="multiple_results_body"/>
+        <ul>
+          <xsl:for-each select="//author">
+            <li>
+              <xsl:call-template name="found_author"/>
+            </li>
+          </xsl:for-each>
+        </ul>
+      </xsl:with-param>
+    </xsl:call-template>
+  </xsl:template>
+</xsl:stylesheet>

@@ -1,0 +1,95 @@
+Unofficial Documentation for the AuthorProfile Service
+
+Revised on 02/28/12 by James R. Griffin III
+Drafted on 02/19/12 by James R. Griffin III
+
+(This is a working draft; Something more formal [Wiki?] will replace this.)
+
+E-Mail: jrgriffiniii [a_t] gmail [d0t] com
+Skype: jamesrgriffiniii
+
+
+
+Frequently Asked Questions (F. A. Q.)
+
+
+
+1.  What is AuthorProfile?
+
+
+
+AuthorProfile is a service which aims to present to the user information relevant to the resolution of author identity for digitally-curated documents and works.  AuthorProfile was originally designed by Thomas Krichel of the Open Library Society and the Palmer School of Library and Information Science at Long Island University.
+
+AuthorProfile, at this stage of development, essentially performs two operations: indexing and citation network analysis.  Bibliographic metadata are aggregated and converted into the Academic Metadata Format (AMF) by the 3lib project (http://3lib.org/).  I am not involved in the 3lib project. Using these records, the AuthorClaim service (http://authorclaim.org/) then provides researchers and authors a system through which to claim intellectual responsibility for a given work.  AuthorClaim, also, does not involve me.
+
+AuthorProfile uses the 3lib metadata records and the AuthorClaim user profiles (these being, documents linking AuthorClaim users with 3lib records).  Currently, these are XML documents held in a local, flat file store.  I have, and am still, experimenting with a number of NoSQL XML database systems.  T. Krichel has expressed to me his preference for a system design which does not integrate any relational database systems.
+
+
+
+	A. Indexing
+
+
+	AuthorProfile firstly indexes the metadata records through a process designed and initially implemented by T. Krichel.  For all author-name character-strings (the names of the authors attributed to a single document within a bibliographic record [e. g. "John Smith"]), new XML document-files (files containing only 1 XML document) are created within a separate collection of files.  The file paths are generated from processing an author-name string into a simple scheme:
+
+
+	Scheme:
+
+
+	"John Smith"
+
+	[ROOT]/j/oh/n_/smi/th.amf.xml
+
+
+	The XML document contained within this file is in the AMF.  The document itself consists of all bibliographic records specifying the author-name string.  Originally, Perl scripts were run which parsed the 3lib records, generated these files, and which copied each record into the appropriately named file.
+
+	Hence, it is an implementation of an XML-indexing feature, specific to the functions of AuthorProfile.
+
+	Internally, T. Krichel has referred to a author-name character string as an "aunex" ("author name expressions"), author-name strings as "aunexes", and to this process as "auversion" ("author name expression inversion").
+
+	For each request author-name request sent to the HTTP server, the corresponding XML file is retrieved, and then transformed using several XSLT sheets.  T. Krichel was responsible for the design and development of these XSLT sheets, as well as this overall process.
+
+	Perl scripts are run on the server in order to execute this process of "auversion".  Both I and T. Krichel collaborated upon the development of these scripts, using T. Krichel's design.  Currently, I've developed a (temporary) Python wrapper for executing these Perl scripts in parallel for each 3lib collection to be "auverted".
+
+	This is a temporary remedy, and will be removed once I move towards a strictly object-oriented Python approach.
+
+	I am currently also exploring various indexing libraries (PyLucene) and applications (Solr) in order to move away from an implementation which solely relies upon data retrieved in the AMF.
+
+	However, the object-oriented API is of a higher priority than this.
+
+
+
+		A. 1. "Horizontal Integration"
+
+
+		There is also a feature, designed by T. Krichel, referred to as "horizontal integration".  This is basically the discovery and storage of relationships between author-name strings based upon similarity of value (e. g. {"John Smith" : ["Jonathan Smith","Joseph Smith","J. Smith"]}).  Originally, this was to be implemented using a Perl script to generate and store associative array structures into a key-value store database.  This is still being implemented (using a modified, Python-based approach by myself), but shall ultimately be deprecated in favor of querying the database, sorting the results using algorithms internal to the DBMS, and serving the results using an AJAX-based UI feature.
+
+		Should an indexing library or application be integrated into the system, then this would also be preferred to the generation and storage of associative array structures.
+
+
+
+	B. Citation Network Analysis
+
+
+	Originally designed by T. Krichel, this was originally implemented by me.  Using a script to discover the resident network component for a given AuthorClaim user (authored by T. Krichel), I developed a depth-first network exploration script which discovers the shortest paths between any locally unresolved author name-string and an AuthorClaim user.  These paths are serialized into an associative array, which are then stored into a database.
+
+	While the script works successfully, I am less than satisfied with its implementation, and am currently developing a Python script (which adheres to a more object-oriented implementation of the design).
+
+	I'm also responsible for the Python wrapper script which invokes this Perl script, and which implements the functionalities of the Python multiprocessing module.
+
+	This feature was termed by T. Krichel as "vertical integration".
+
+
+
+2. Direction and Development Goals
+
+
+
+I am currently working to migrate towards an object-oriented, Python-based system (wrapped in Perl, or extensible in Perl).  However, I must first address the remaining issues afflicting the already-implemented features (these are becoming increasingly minimal), and then finish the implementation of the originally-designed features.
+
+I was exploring the possibility of implementing a strictly document-oriented approach, and moving away from anything object-oriented entirely.  This began with tests developed in the Clojure language.  However, until there are significant adjustments in the manner by which documents are stored and retrieved from both 3lib and AuthorClaim (it would not be reasonable on my part to demand these changes), this would not be the ideal approach.
+
+My ultimate vision is to move towards a system which does not limit the integration of user data to the AuthorClaim service, but to data aggregated by third parties which can assist in the resolution of author-name strings local to the system.  Third party services such as Mendeley and LinkedIn would be ideal, but I would also be interested in exploring the possible integration of data generated by applications local to academic and research institutions such as the BibApp and Vivo.
+
+
+
+If anything is unclear, please, contact me freely.

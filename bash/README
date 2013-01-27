@@ -1,0 +1,5 @@
+01/07/12
+
+This directory is designated for BASH scripts used in the general administration of the system.  Most, if not all, of the functionalties offered by these scripts should be integrated or replaced by system daemons.
+
+- James

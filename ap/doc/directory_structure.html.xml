@@ -1,0 +1,27 @@
+<div xmlns="http://www.w3.org/1999/xhtml" title="directory structure">
+  <!-- fixme: this is not up to date -->
+  The canonical directories are
+  <dl>
+    <dt>amf</dt>
+    <dd>all AMF data</dd>
+    <dt>amf/3lib</dt>
+    <dd><em>symlink</em> to 3lib data, not redistributed here.</dd>
+    <dt>amf/auverted</dt>
+    <dd>auverted AMF data</dd>
+    <dt>doc</dt>
+    <dd>documentation, written as html snippet in xml</dd>
+    <dt>etc</dt>
+    <dd>configuration, as plain text files</dd>
+    <dt>html</dt>
+    <dd>static html files</dd>
+    <dt>perl</dt>
+    <dd>all perl scripts and libraries</dd>
+    <dt>perl/bin</dt>
+    <dd>executable Perl</dd>
+    <dt>perl/lib</dt>
+    <dd>custom perl libraries</dd>
+    <dt>style</dt>
+    <dd>files, ending .xslt.xml for style sheets, and ending
+    .css for CSS </dd>
+  </dl>
+</div>

@@ -1,0 +1,38 @@
+<div xmlns="http://www.w3.org/1999/xhtml" title="assignment of responsibilities">
+  <div>Responsibilites for files in <a href="http://authorprofile.org/perl/lib/AuthorProfile/x">perl/lib/AuthorProfile</a> are</div>
+  <dl>
+    <dt><a href="http://authorprofile.org//perl/lib/AuthorProfile/Auvert.pm">Auvert.pm</a></dt>
+    <dd><a href="http://jamesrgriffiniii.us/">James R. Griffin III</a></dd>
+    <dt><a href="http://authorprofile.org//perl/lib/AuthorProfile/Cache.pm">Cache.pm</a></dt>
+    <dd><a href="http://jamesrgriffiniii.us/">James R. Griffin III</a></dd>
+    <dt><a href="http://authorprofile.org//perl/lib/AuthorProfile/Common.pm">Common.pm</a></dt>
+    <dd><em>all</em></dd>
+    <dt><a href="http://authorprofile.org//perl/lib/AuthorProfile/Conf.pm">Conf.pm</a></dt>
+    <dd><em>all</em></dd>
+    <dt><a href="http://authorprofile.org//perl/lib/AuthorProfile/Documentation.pm">Documentation.pm</a></dt>
+    <dd><a href="http://openlib.org/home/krichel/">Thomas Krichel</a></dd>
+    <dt><a href="http://authorprofile.org//perl/lib/AuthorProfile/Web.pm">Web.pm</a></dt>
+    <dd><a href="http://openlib.org/home/krichel/">Thomas Krichel</a></dd>
+    <dt><a href="http://authorprofile.org//perl/lib/AuthorProfile/Network.pm">Network.pm</a></dt>
+    <dd><a href="http://jamesrgriffiniii.us/">James R. Griffin III</a></dd>
+  </dl>
+  <div>Responsibilities for file in <a href="http://authorprofile.org/perl/bin/">perl/bin</a> are</div>
+  <dl>
+    <dt><a href="http://authorprofile.org//perl/bin/auvert_collection">auvert_collection</a></dt>
+    <dd><a href="http://jamesrgriffiniii.us/">James R. Griffin III</a></dd>
+    <dt><a href="http://authorprofile.org//perl/bin/create_authors_pages">create_authors_pages</a></dt>
+    <dd><a href="http://openlib.org/home/krichel/">Thomas Krichel</a></dd>
+    <dt><a href="http://authorprofile.org//perl/bin/doc2html">doc2html</a></dt>
+    <dd><a href="http://openlib.org/home/krichel/">Thomas Krichel</a></dd>
+    <dt><a href="http://authorprofile.org//perl/bin/documentation_server">documentation_server</a></dt>
+    <dd><a href="http://openlib.org/home/krichel/">Thomas Krichel</a></dd>
+    <dt><a href="http://authorprofile.org//perl/bin/generate_vid.pl">generate_vid.pl</a></dt>
+    <dd><a href="http://jamesrgriffiniii.us/">James R. Griffin III</a></dd>
+    <dt><a href="http://authorprofile.org//perl/bin/list_authors">list_authors</a></dt>
+    <dd><a href="http://openlib.org/home/krichel/">Thomas Krichel</a></dd>
+    <dt><a href="http://authorprofile.org//perl/bin/profile_server">profile_server</a></dt>
+    <dd><a href="http://openlib.org/home/krichel/">Thomas Krichel</a></dd>
+    <dt><a href="http://authorprofile.org//perl/bin/verticald.pl">verticald.pl</a></dt>
+    <dd><a href="http://jamesrgriffiniii.us/">James R. Griffin III</a></dd>
+  </dl>
+</div>

@@ -1,0 +1,46 @@
+#!/usr/bin/perl
+
+use lib qw(/home/aupro/ap/perl/lib);
+use CGI::Fast qw/-utf8/;
+use AuthorProfile::Web;
+#use threads;
+#use threads::shared;
+#use FCGI;
+
+#my $caching_thr;
+#my $check_cache_thr;
+
+sub start_caching {
+#  &generate_cache();
+#  print('here');
+  return 0;
+}
+
+sub check_cache {
+#  &check_cachetime(time());
+  return 0;
+}
+
+#$caching_thr=threads->create({'scalar' => 1}, \&start_caching);
+#$caching_thr->detach();
+
+#my $fcgi_thr;
+
+
+#my $request;
+#$request=FCGI::Request();
+#share($request);
+
+#$fcgi_thr=threads->create({'scalar' => 1}, \&fcgi_run);
+#$fcgi_thr->detach();
+
+
+#&fcgi_run;
+
+#sub fcgi_run {
+#  while($request->Accept() >= 0) {
+
+while (my $q = new CGI::Fast) {
+  my $app = new AuthorProfile::Web(QUERY => $q); 
+  $app->run();
+}

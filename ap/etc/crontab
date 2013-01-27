@@ -1,0 +1,6 @@
+PERL5LIB=~/ap/perl/lib
+## m h  dom mon dow   command
+# 
+0 *  *   *   *     export PERL5LIB=$HOME/ap/perl/lib; ~/ap/perl/bin/create_authors_pages ; ~/ap/perl/bin/list_authors  
+# Clean the vertical integration logs on the first day of every month.
+23 0  1   *   *     rm ~/ap/var/log/old/*

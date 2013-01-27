@@ -1,0 +1,132 @@
+#!/usr/bin/env python
+
+from authorprofile.common import getMongoDBConn,getMongoDBColl
+from lxml import etree
+
+# Google's PageRank
+# Mark J. Newman
+# Thomas Krichel
+
+# SUM(1/k) for each paper shared in collaboration
+
+AMF_NS={'amf':'http://amf.openlib.org'}
+TEST_ACIS_PROFILE_PATH='/home/aupro/ap/amf/3lib/am/k/r/pkr1.amf.xml'
+
+amfDoc=etree.parse(TEST_ACIS_PROFILE_PATH)
+
+# Benchmarked: http://www.peterbe.com/plog/uniqifiers-benchmark
+
+# For authorprofile.AuthorClaimUser
+
+#print etree.tostring(amfDoc)
+#exit()
+
+# AuthorClaimUser objects
+def populateMongoDBColl(collName):
+    pass
+
+# No Document Resource modules were found which integrate with the MongoDB.
+
+def checkIfAuthorIsIdentified(authorNameStr,amfText):
+# authorprofile.AuthorClaimUser
+# [...]
+# AuthorClaimUser.isauthorofDocuments = set(authorprofile.Document)
+# "syntactic sugar": AuthorClaim.claimedDocumentRefs = [doc.ref for doc in self.isauthorofDocuments]
+# [...]
+# authorprofile.Document
+# [...]
+# Document.isClaimed = bool()
+# Document.isClaimedByAuthors = {authorNameStr:authorprofile.AuthorClaimUser[,...]}
+    
+    # authorNameStr $in authorNameStr
+    #{amfText['ref] $in claimedDocumentRefs}
+    conn=getMongoDBConn()
+    print getMongoDBColl('authorprofile','authorClaimUsers',conn).find({'authorClaimUser':{'$exists':True},{'authorClaimUser':{'acisNames':[]}}})
+    
+    conn.disconnect()
+    
+    exit()
+
+    pass
+
+def getNumberOfAuthorsForDoc(amfText):
+    #print [s.tag for s in amfName.getparent().getparent().itersiblings()]
+    #return len(amfName.getparent().getparent().itersiblings())
+    return len(amfText.xpath('amf:hasauthor/amf:person/amf:name',namespaces=AMF_NS))
+
+# getNeighboringAunexes
+edgeWeights={}
+#for amfName in amfDoc.xpath('/amf:amf/amf:person/amf:isauthorof/amf:text/amf:hasauthor/amf:person/amf:name',namespaces=AMF_NS):
+for amfText in amfDoc.xpath('/amf:amf/amf:person/amf:isauthorof/amf:text',namespaces=AMF_NS):
+    for amfName in amfText.xpath('amf:hasauthor/amf:person/amf:name',namespaces=AMF_NS):
+        # Check AuthorClaim profiles to determine whether or not this text has been claimed by any users.
+        # If it has, retrieve the name variations for the user and compare with the author-name string.
+        # These relationships should be stored into an object and serialized for future reference.
+        if checkIfAuthorIsIdentified(amfName.text,amfText): continue
+
+        k=float(getNumberOfAuthorsForDoc(amfText))
+        if k-1:
+            if amfName.text in edgeWeights:
+                edgeWeights[amfName.text]+1/(k-1)
+            else:
+                edgeWeights[amfName.text]=1/(k-1)
+        else:
+            if not amfName.text in edgeWeights: edgeWeights[amfName.text]=0
+
+#for aunex in edgeWeights.keys():
+#    if edgeWeights[aunex]:
+#        edgeWeights[aunex]=1/edgeWeights[aunex]
+
+print edgeWeights
+exit()
+#i = {}
+#for authorName in authorNames:
+#        i[authorName] = 1
+#authorNames=set(i.keys())
+#print authorNames
+#exit()
+
+#getNumberOfDocsSharedForAunex
+#for amfTextDoc in amfDoc.xpath('/amf:amf/amf:person/amf:isauthorof/amf:text',namespaces=AMF_NS):
+#    print len(amfTextDoc.xpath('amf:hasauthor/amf:person/amf:name',namespaces=AMF_NS))
+
+#exit()
+# getNumberOfAuthorsForDoc
+# k
+#    for amfTextDoc in amfDoc.xpath('/amf:amf/amf:person/amf:isauthorof/amf:text',namespaces=AMF_NS):
+#        print len(amfTextDoc.xpath('amf:hasauthor/amf:person/amf:name',namespaces=AMF_NS))
+
+
+
+
+
+
+# Unnecessary at this point
+#for authorName in amfDoc.xpath('/amf:amf/amf:person/amf:isauthorof/amf:text/amf:hasauthor/amf:person/amf:name',namespaces=AMF_NS):
+#    print authorName.text
+#    print authorName.getparent().getparent().getparent().attrib['ref']
+
+exit()
+
+def getNumberOfAuthorsForPaper(paper=None,authorNode=None,amfDoc=None):
+
+    if paper.amfTextID:
+
+        paper.amfFilePath=getFilePathForAMFTextID(self.amfTextID)
+        pass
+
+    if paper.amfFilePath and not amfDoc:
+        try:
+
+            amfDoc=etree.parse(paper.amfFilePath)
+        except:
+            
+            print 'Error: Could not parse',paper.amfFilePath
+            exit()
+
+        for amfTextElement in amfDoc.xpath('/amf:amf/amf:text',namespaces=AMF_NS):
+            return len(amfTextElement.xpath('amf:hasauthor',namespaces=AMF_NS))
+    else:
+
+        print 'Error: Not yet implemented'
+        exit()

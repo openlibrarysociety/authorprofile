@@ -1,0 +1,456 @@
+#!/usr/bin/env python
+
+from time import time
+from re import sub,findall
+from pymongo import Connection
+from random import randint
+from lxml import etree
+
+AMF_NS={'amf':'http://amf.openlib.org'}
+QUERY_LIMIT=100
+
+def getNumberOfAuthorsForPaper(paper=None,authorNode=None,amfDoc=None):
+
+    if paper.amfTextID:
+
+        paper.amfFilePath=getFilePathForAMFTextID(self.amfTextID)
+        pass
+
+    if paper.amfFilePath and not amfDoc:
+        try:
+
+            amfDoc=etree.parse(paper.amfFilePath)
+        except:
+            
+            print 'Error: Could not parse',paper.amfFilePath
+            exit()
+
+        for amfTextElement in amfDoc.xpath('/amf:amf/amf:text',namespaces=AMF_NS):
+            return len(amfTextElement.xpath('amf:hasauthor',namespaces=AMF_NS))
+    else:
+
+        print 'Error: Not yet implemented'
+        exit()
+
+class amfXMLPaper:
+
+    def __init__(self,amfFilePath=None,amfTextID=None,authorNode=None):
+
+        if amfTextID:
+            self.amfTextID=amfTextID
+        if amfFilePath:
+            self.amfFilePath=amfFilePath
+        if authorNode:
+            self.authorNode=authorNode
+
+        self.numberOfAuthors=getNumberOfAuthorsForPaper(self)
+        pass
+
+#def getWeightValueForPaper(amfXMLTextElement):
+
+    
+
+def getWeightForAMFAuthorNodes(u,v):
+
+    # The weight is the inverse of the summation of all "paper weight-values" upon which both authors have collaborated
+    # A "paper weight-value" is simply 1/(total number of authors specified in a given paper)
+    # I believe that this is an implementation of Mark J. Newman's algorithm for determining edge weights within citation networks
+
+    # u.papers = [amfXMLPaper]
+    # getDocumentsUponWhichAuthorsHaveCollaborated
+
+    for paper in neighborhood.u.papers:
+        k=getWeightValueForPaper()
+    pass
+
+def getNeighborhoodForAuthorNode(amfFilePath):
+    aunexes=[]
+    edges=[]
+    amfDoc=etree.parse(amfFilePath)
+    authorNode=Node(amfDoc.xpath('/amf:amf/amf:person/acis:shortid',namespaces={'amf':'http://amf.openlib.org','acis':'http://acis.openlib.org'})[0].text)
+    for amfIsAuthorOfElement in amfDoc.xpath('/amf:amf/amf:person/amf:isauthorof',namespaces=AMF_NS):
+        for amfHasAuthorElement in amfIsAuthorOfElement.xpath('amf:text/amf:hasauthor',namespaces=AMF_NS):
+        # print amfHasAuthorElement.xpath('amf:person/amf:name',namespaces=AMF_NS)[0].text
+            amfNameElement=amfHasAuthorElement.xpath('amf:person/amf:name',namespaces=AMF_NS)[0]
+            if amfNameElement.text not in aunexes:
+                aunexes.append(amfNameElement.text)
+                edge=Edge(authorNode,Node(amfNameElement.text))
+                edges.append(edge)
+    return Neighborhood(authorNode,edges)
+
+def getDegreeCentralityForNode(authorNode,neighborhood=None):
+    incidentEdges=0
+    for edge in neighborhood.edges:
+        if (edge.u == authorNode) or (edge.v == authorNode):
+            incidentEdges+=1
+    
+    pass
+
+def getWeightForNodes(u,v,edge=None):
+    pass
+
+def getamfFilePathFromACISID(acisID):
+    pass
+
+class Network:
+    
+    def __init__(self,_id=0):
+
+        self._id=randint(1,16^8)
+
+class Tree(Network):
+
+    def __init__(self,rootNode,paths=None,neighborhoods=None):
+
+        self.paths=[]
+        self.neighborhoods=[[]]
+        self.root=rootNode
+        self.root._isRoot.append(self)
+        pass
+
+    def insertNewPath(self,pathIndex,STORE_PATHS=0,offset=1):
+
+        # Clone the path
+        self.paths.append(self.paths[pathIndex])
+        # Do not retain evaluated paths in memory
+        if not STORE_PATHS:
+            self.paths[pathIndex]=None
+        pathIndex+=1
+        # Remove the last node of the cloned path
+        for i in range(offset):
+            self.paths[pathIndex].removeNode(len(self.paths[pathIndex].nodes) - 1)
+
+        return pathIndex
+
+class Neighborhood(Network):
+
+    # def __init__(self,edgesMap):
+    def __init__(self,rootNode,edges):
+
+        self.root=rootNode
+        self.root._isRoot.append(self)
+        self.edges=edges
+        self.nodes=[]
+        for edge in self.edges:
+            edge._neighborhoods.append(self)
+            if (edge.u is not self.root) and (edge.u not in self.nodes):
+            #if edge.u not in self.nodes:
+                self.nodes.append(edge.u)
+            if (edge.v is not self.root) and (edge.v not in self.nodes):
+            #if edge.v not in self.nodes:
+                self.nodes.append(edge.v)
+
+    def getEdges(self,u,v):
+        edges=[]
+        for edge in self.edges:
+            if (edge.u == u and edge.v == v) or (edge.u == v and edge.v == u):
+                edges.append(edge)
+        return edges
+
+    def getEdge(self,u,v):
+        for edge in self.edges:
+            if (edge.u == u and edge.v == v) or (edge.u == v and edge.v == u):
+                return edge
+
+    def deprecated(self):
+
+        self.root=rootNode
+        self.edges=edges
+        self.nodes=[]
+
+        for edge in edges:
+            # for edgeNode in :
+                # if edgeNode not in self.nodes:
+            print edge.u.value, edge.v.value
+            if edge.u not in self.nodes:
+                self.nodes.append(edge.u._id)
+            else:
+                self.root=edge.u
+            if edge.v not in self.nodes:
+                self.nodes.append(edge.v._id)
+
+            # Acyclic, unidirectional
+            for node in self.nodes:
+                if self.nodes.count(node) > 1:
+                    self.root=edge.v
+
+        if not self.root:
+            print 'Fatal: Could not find root node for edge'
+            exit()
+
+class Path(Network):
+
+    def __init__(self,rootNode,nodes,edges,neighborhoods=None,weight=0):
+        self.root=rootNode
+
+        # Construct the path
+        i=0
+        self.edges=[]
+        self.weight=0
+
+        # e. g.
+        # root: alpha
+        # nodes: beta, gamma
+        # neighborhood 1: alpha, beta, gamma
+        # neighborhood 2: beta, gamma, delta
+
+        # In neighborhood 1, look for an edge between alpha and beta
+        # (iterate)
+        # In neighborhood 1, look for an edge between beta and gamma
+        # Edges
+
+        # As a result, Paths should be instantiated from Edges
+
+        if not edges:
+            self.nodes=[self.root] + nodes
+            print 'Fatal: Not implemented'
+            exit()
+            self.neighborhoods=neighborhoods
+            # For a single neighborhood
+            for neighborhood in self.neighborhoods:
+                while i < len(self.nodes) - 1:
+                    # where node[i] is u and node[i+1] is v in edges
+                    edge=neighborhood.getEdge(self.nodes[i],self.nodes[i+1])
+                    if edge:
+                        self.edges.append(edge)
+                    i+=1
+                if edges and (len(edges) >= len(self.nodes)):
+                    break
+        else:
+            self.nodes=nodes
+            self.edges=edges
+        self.distanceFromRoot=len(self.nodes)
+        for edge in self.edges:
+
+            self.weight+=edge.weight
+
+    def addNode(self,node,edge):
+
+        try:
+
+            self.edges.append(edge)
+            self.nodes.append(node)
+
+        except:
+
+            return None
+        self.distanceFromRoot=len(self.nodes)
+
+    def removeNode(self,nodeIndex):
+
+        try:
+
+            self.nodes.pop(nodeIndex)
+            self.edges.pop(nodeIndex)
+        except:
+
+            return None
+        self.distanceFromRoot=len(self.nodes)
+        
+    def serialize_vema_json(self):
+        
+        p=''
+        #for node in self.nodes:
+        i=len(self.nodes) - 1
+        while i >= 0:
+            p+=self.nodes[i].value
+            p+='_'
+            i-=1
+        p+=self.root.value
+        return {'aunex':self.nodes[len(self.nodes) - 1].value,'e':self.root.value,'d':self.distanceFromRoot,'p':p,'w':self.weight}
+
+class Edge(Network):
+
+    def __init__(self,u,v,weight=0):
+
+        # super(Edge,self).__init__()
+        self.u=u
+        self.u._edges.append(self)
+        self.v=v
+        self.v._edges.append(self)
+
+        self._neighborhoods=[]
+        if weight:
+            self.weight=weight
+        # Move to subclass amfCitationEdge
+        else:
+            self.weight=getWeightForAMFAuthorNodes(self.u,self.v)
+
+class Node(Network):
+
+    def __init__(self,value):
+
+        # super(Node,self).__init__()
+        self._id=randint(1,16^8)
+        self.value=value
+        self._edges=[]
+        self._isRoot=[]
+        self._neighborhoods=[]
+        # Move to class ACISauthorNode
+        self.authorCommonality=0
+
+        # Move to class ACISauthorNode
+        self.amfFilePath=getamfFilePathFromACISID(self.value)
+        self.adjacentNeighborhood=getNeighborhoodForAuthorNode(self.amfFilePath)
+        self.degreeCentrality=getDegreeCentralityForNode(self,self.adjacentNeighborhood)
+
+def normalizeAunex(aunex):
+
+    try:
+        aunex=sub('\.','',aunex)
+        aunex=aunex.lower()
+
+        aunex=aunex.encode('ascii', 'backslashreplace')
+    
+        for encChar in findall(r'\\x.{2}',aunex):
+            aunex = sub('\\' + encChar,('00' + sub(r'\\x','',encChar).upper()),aunex)
+        for utf8Char in findall(r'\\u.{4}',aunex):
+            aunex = sub('\\' + utf8Char,(sub(r'\\u','',utf8Char).upper()),aunex)
+
+    except:
+        print 'Warning: Could not normalize the aunex',aunex
+        return None
+
+    return aunex
+
+
+def getMongoDBConn(host=None,port=None):
+
+    try:
+        #if host:
+            #conn=Connection(host)
+        #else:
+            #conn=Connection()
+        conn=Connection(host)
+    except:
+        print 'Error: Could not retrieve connection'
+        return None
+        #getMongoDBConn()
+
+    return conn
+
+def getMongoDBColl(collName,dbName,conn):
+
+    try:
+        db = conn[dbName]
+
+    except:
+        print 'Error: Could not connect to the database',dbName
+        return None
+        #exit(1)
+
+    try:
+        coll=db[collName]
+    except:
+        print 'Error: Could not find the collection',collName,'in the database',dbName
+        return None
+        #exit(1)
+
+    return coll
+
+class Aunex:
+
+    def __init__(self,jsonObject=None):
+
+        if jsonObject:
+            for aunexProperties in jsonObject.values():
+                for aunexProperty in aunexProperties:
+
+                    # The object attributes
+                    # Hard-coded for security
+                    supportedProperties=['name','filePath']
+                    for supportedProperty in supportedProperties:
+                        if supportedProperty in aunexProperty:
+                            # Dangerous, need to check for code injection here
+                            exec "if '"+supportedProperty+"' in aunexProperty: self."+supportedProperty+" = aunexProperty.values()[0]"
+
+                    # Hard-coded attributes
+                        pass
+
+def getAunexesForJSONObjects(jsonObjects):
+
+    return map(Aunex,jsonObjects)
+
+def constructAunexesFromProperties(aunexProperties):
+
+    aunexes=[]
+
+    for aunex in aunexProperties:
+        for nameString,_aunexes in zip(aunex.keys(),aunex.values()):
+            for u,v in zip(_aunexes.keys(),_aunexes.values()):
+                _aunex={}
+                _aunexProperties=[
+                    {'name':nameString}
+                    ]
+                for aunexProperty,aunexPropertyValue in zip(v.keys(),v.values()):
+
+                    _property={aunexProperty:aunexPropertyValue,'time':time()}
+                
+                    _aunexProperties.append(_property)
+                _aunex={time():_aunexProperties}
+                aunexes.append(_aunex)
+                
+        return aunexes
+
+def testgetMongoDBAunexes(aunex,coll=None,db=None,conn=None,collName=None,dbName=None,host=None):
+
+    aunexProperties=[{'Daniel Richards': {'auversion': {u'timeLastUpdated': 1325995914L, u'lastUpdateSuccessful': 1L, u'filePath': u'd/an/ie/l_r/ich/ard/s.amf.xml'}}}]
+    return getAunexesForJSONObjects(constructAunexesFromProperties(aunexProperties))
+#    return constructAunexesFromProperties(aunexProperties)
+
+def getMongoDBAunexes(aunex,coll=None,db=None,conn=None,collName=None,dbName=None,host=None):
+
+    if not dbName:
+        dbName='authorprofile'
+        aunexProperties=[]
+        for _collName in ['auversion','vema','horizontal']:
+            #print _collName
+            conn=getMongoDBConn(host)
+            print 'Searching in',_collName,'using the aunex',aunex
+            try:
+                results=getMongoDBColl(_collName,dbName,conn).find({'aunex':aunex},limit=QUERY_LIMIT,sort=[('timeLastUpdated',1)])
+            except:
+                print 'Warning: Could not retrieve the data structure in',_collName
+                continue
+
+            if results.count():
+                for result in results:
+
+                    if ('aunex' in result.keys() and 'lastUpdateSuccessful' in result.keys()) and result['lastUpdateSuccessful']:
+                        print 'Found the serialized data structure',result
+                        del result['_id']
+                        del result['aunex']
+                        try:
+                            aunexProperties.append(
+                                {aunex:{_collName:result}}
+                                )
+                        except:
+                            print 'failed'
+
+            else:
+                # Legacy
+                conn.disconnect()
+                conn=getMongoDBConn(host)
+                print 'No results found for',aunex,'in',_collName
+                print 'Attempting to use the normalized aunex...'
+                normAunex=normalizeAunex(aunex)
+                if not normAunex: continue
+                try:
+                    results=getMongoDBColl(_collName,dbName,conn).find({'aunex':normAunex,'lastUpdateSuccessful':1},limit=QUERY_LIMIT,sort=[('timeLastUpdated',1)])
+                except:
+                    print 'Warning: Could not retrieve the data structure in',_collName
+                    continue
+
+                if results.count():
+                    for result in results:
+                        if ('aunex' in result.keys() and 'lastUpdateSuccessful' in result.keys()) and result['lastUpdateSuccessful']:
+                            aunexProperties.append({result['aunex']:{_collName:result}})
+                else:
+                    print 'No results for the normalized aunex',normAunex,'in',_collName
+
+            results=None                
+            conn.disconnect()
+
+        #return aunexProperties
+        return constructAunexesFromProperties(aunexProperties)
+        #return getAunexesForJSONObjects(constructAunexesFromProperties(aunexProperties))

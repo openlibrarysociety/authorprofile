@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" 
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:html="http://www.w3.org/1999/xhtml">
+  <xsl:include href="common.xslt.xml"/>
+  <!-- this generates HTML from file listings -->
+  <!-- it is used by perl/lib/AuthorProfile/Documentation.pm --> 
+  <xsl:template name="directory_title">
+    <a href="/">AuthorProfile</a>
+    <xsl:text> documentation: directory “</xsl:text>
+    <code> 
+      <xsl:value-of select="/directory/@name"/>
+    </code>
+    <xsl:text>”</xsl:text>
+  </xsl:template>
+  <xsl:template name="directory_body">
+    <h1>
+      <xsl:call-template name="directory_title"/>
+    </h1>
+    <hr/>
+    <table>
+      <tr>
+        <th scope="col" id="type_header">
+          <xsl:text>type</xsl:text>
+        </th>
+        <th scope="col" id="size_header">
+          <xsl:text>size</xsl:text>
+        </th>
+        <th scope="col" id="time_header">
+          <xsl:text>time</xsl:text>
+        </th>
+        <th scope="col" id="name_header">
+          <xsl:text>name</xsl:text>
+        </th>
+      </tr>
+      <xsl:for-each select="/directory/file">
+        <tr>
+          <xsl:call-template name="directory_line"/>
+        </tr>
+      </xsl:for-each>
+    </table>
+  </xsl:template>
+  <!-- for an entry in the directory -->
+  <xsl:template name="directory_line">
+    <td headers="type_header">
+      <xsl:value-of select="@type"/>
+    </td>
+    <td headers="size_header">
+      <xsl:value-of select="@size"/>
+    </td>
+    <td headers="time_header">
+      <xsl:value-of select="@mtime"/>
+    </td>
+    <td headers="name_header">
+      <a>
+        <xsl:attribute name="href">
+          <xsl:value-of select="$domain_url"/>
+          <xsl:value-of select="@link"/>
+        </xsl:attribute>
+        <xsl:value-of select="@name"/>
+      </a>
+    </td>    
+  </xsl:template>
+  <!-- page template -->
+  <xsl:template match="/">
+    <xsl:call-template name="page">
+      <xsl:with-param name="title">
+        <xsl:call-template name="directory_title"/>
+      </xsl:with-param>
+      <xsl:with-param name="main_body">
+        <xsl:call-template name="directory_body"/>
+      </xsl:with-param>
+    </xsl:call-template>
+  </xsl:template>
+</xsl:stylesheet>
+
+    

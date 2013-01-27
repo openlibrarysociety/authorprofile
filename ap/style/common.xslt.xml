@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xsl:stylesheet version="1.0" 
+                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns="http://www.w3.org/1999/xhtml"
+                xmlns:ap="http://authorprofile.org"
+                xmlns:amf="http://amf.openlib.org"
+                exclude-result-prefixes="amf #default ap">
+  <xsl:output method="xml"
+              omit-xml-declaration="yes"
+              doctype-public="-//W3C//DTD XHTML 1.0 Strict//EN"
+              doctype-system="http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"/>
+
+  <!-- 02/25/12 - James -->
+  <xsl:include href="author-name-search.xslt.xml"/>
+
+  <!-- the URL to address aunexes -->
+  <xsl:variable name="aunex_url_start">
+   <!-- <xsl:text>/author/profile.fcgi?q=</xsl:text> -->
+   <xsl:text>=</xsl:text>
+  </xsl:variable>
+  <xsl:variable name="author_url_start">
+    <xsl:text>/</xsl:text>
+  </xsl:variable>
+  <xsl:variable name="domain_url">
+    <xsl:text>http://authorprofile.org</xsl:text>
+  </xsl:variable>
+  <!-- the names of the maintainers -->  
+  <xsl:template name="maintainers">
+    <a href="http://jamesrgriffiniii.us/">
+      <xsl:text>James R. Griffin III</xsl:text>
+    </a>
+    <xsl:text>, with help from </xsl:text>
+    <a href="http://openlib.org/home/krichel/">
+      <xsl:text>Thomas Krichel</xsl:text>
+    </a>
+  </xsl:template>
+  <!-- html page template -->
+
+  <!-- trailer template at the end -->
+  <xsl:template name="trailer">
+    <div class="trailer">
+      <hr/>
+      <xsl:text>This service is maintained by </xsl:text>
+      <xsl:call-template name="maintainers"/>
+    </div>
+  </xsl:template>
+  <!-- main text template -->
+  <xsl:template name="text">
+    <xsl:param name="in"/>    
+    <xsl:param name="is_aunex"/>
+    <div>
+      <xsl:choose>
+        <xsl:when test="string-length($in/amf:displaypage)">
+          <a class="pt">            
+            <xsl:attribute name="href">
+              <xsl:value-of select="$in/amf:displaypage"/>
+            </xsl:attribute>
+            <xsl:value-of select="$in/amf:title"/>
+          </a>
+        </xsl:when>
+        <xsl:otherwise>
+          <span class="pt">
+            <xsl:value-of select="$in/amf:title"/>
+          </span>
+        </xsl:otherwise>
+      </xsl:choose>
+    </div>
+    <div>
+      <xsl:for-each select="$in/amf:hasauthor/amf:person">
+        <xsl:call-template name="author">
+          <xsl:with-param name="in"
+                          select="."/>
+          <xsl:with-param name="is_aunex"
+                          select="$is_aunex"/>
+        </xsl:call-template>        
+      </xsl:for-each>          
+    </div>
+  </xsl:template>
+  <xsl:template name="author">
+    <!-- the input author -->
+    <xsl:param name="in"/> 
+    <!-- a  boolean that says whether we are building for an aunxex or a profile -->
+    <xsl:param name="is_aunex"/>
+    <!-- author separator -->
+    <xsl:text>   </xsl:text>
+    <span>
+      <xsl:choose>
+        <!-- test that is most common first -->
+        <xsl:when test="$in/amf:name/@status='0'">
+          <!-- for debugging test="not($in/amf:name/@status)"> -->
+          <q>
+            <a> 
+              <xsl:attribute name="href">
+                <xsl:value-of select="$aunex_url_start"/> 
+                <xsl:value-of select="$in/amf:name"/> 
+              </xsl:attribute>
+              <xsl:attribute name="title">
+                <xsl:text>Status: </xsl:text>
+                <xsl:value-of select="$in/amf:name/@status"/> 
+              </xsl:attribute>
+              <xsl:attribute name="class"> 
+                <xsl:choose>
+                  <xsl:when test="$is_aunex">
+                    <xsl:text>utul</xsl:text>
+                  </xsl:when>
+                  <xsl:otherwise>
+                    <!-- it is an author --> 
+                    <xsl:text>atul</xsl:text>
+                  </xsl:otherwise>
+                </xsl:choose>
+              </xsl:attribute>
+              <!-- contents of <a> after setting the attributes !-->
+              <span>
+                <xsl:attribute name="class">
+                  <xsl:text>person</xsl:text>
+                </xsl:attribute>
+                <!-- use a0 to avoid author names links being broken up -->
+                <xsl:value-of select="translate(normalize-space($in/amf:name),' ',' ')"/>
+              </span>
+            </a>  
+          </q>
+          </xsl:when>
+        <xsl:otherwise>
+          <!-- co-author or profile link -->
+          <xsl:if test="$in/amf:name/@status='2'">
+            <a class="profile">
+              <xsl:attribute name="href">
+                <xsl:value-of select="$in/amf:name/@id"/>
+              </xsl:attribute>
+              <xsl:attribute name="class">
+                <xsl:text>internal profile</xsl:text>
+              </xsl:attribute>
+              <span>
+                <xsl:attribute name="class">
+                  <xsl:text>author</xsl:text>
+                </xsl:attribute>
+                <!-- use a0 to avoid author names links being broken up -->
+                <xsl:value-of select="translate(normalize-space($in/amf:name),' ',' ')"/>
+              </span>
+            </a>
+          </xsl:if>
+          <!-- own author -->
+          <xsl:if test="$in/amf:name/@status='1'">
+            <xsl:comment>author</xsl:comment>
+            <xsl:if test="$is_aunex">
+              <xsl:text>“</xsl:text>
+              </xsl:if>
+              <span>
+                <xsl:attribute name="class">
+                  <xsl:text>internal own_author</xsl:text>
+                </xsl:attribute>
+              <!-- use a0 to avoid author names links being broken up -->
+              <xsl:value-of select="translate(normalize-space($in/amf:name),' ',' ')"/>
+              </span>
+              <xsl:if test="$is_aunex">
+                <xsl:text>”</xsl:text>
+            </xsl:if>
+          </xsl:if>
+          <!-- file not found author -->
+          <xsl:if test="$in/amf:name/@status='-1'">
+            <!-- without link -->
+            <!-- <a class="internal"> -->
+            <!--  <xsl:attribute name="href"> -->
+            <!--    <xsl:text>/author/profile.fcgi?q=</xsl:text> -->
+            <!--    <xsl:value-of select="$in/amf:name"/>  -->
+            <!--  </xsl:attribute> -->
+            <!--  <xsl:attribute name="class"> -->
+            <!--    <xsl:text>internal aunex_without_aunex_file</xsl:text> -->
+            <!--  </xsl:attribute> -->
+            <xsl:text>“</xsl:text>            
+            <span>
+              <xsl:attribute name="class">
+                <xsl:text>author not_auverted</xsl:text>
+              </xsl:attribute>
+              <!-- use a0 to avoid author names links being broken up -->
+              <xsl:value-of select="translate(normalize-space($in/amf:name),' ',' ')"/>
+            </span>
+            <xsl:text>”</xsl:text>
+            <!--</a> -->
+          </xsl:if>
+          <!-- authorprofile link -->
+        </xsl:otherwise>
+      </xsl:choose>
+    </span>
+  </xsl:template>
+  <xsl:template name="page">
+    <xsl:param name="title"/>
+    <xsl:param name="main_body"/>
+    <html lang="en-us">
+      <head>
+        <title>
+          <xsl:value-of select="$title"/>
+        </title>
+        <link rel="stylesheet"
+              type="text/css" 
+              href="/style/ap.css"/>
+
+        <!-- 02/25/12 - James -->
+        <!-- Temporary: Currently, all web pages feature the same <head/> element.  The workflow for the templating process must be identified before it can be modified -->
+        <xsl:call-template name="author-name-search-head"/>
+        
+        <meta http-equiv="content-type" 
+              content="text/html; charset=UTF-8"/>
+      </head>
+      <body>
+
+        <!--
+            02/25/12 - James
+            Horrible work-around, but my only option (unless I restructure the entire system)
+            02/26/12 - Temporarily disabled
+        -->
+        <!--<xsl:if test="contains($title, 'Papers written by people called')">-->
+          <!--
+              02/25/12 - James
+              The search feature
+          -->
+          <!--<xsl:call-template name="author-name-search-body">-->
+            <!--<xsl:with-param name="author-name" select="$aunex"/>-->
+          <!--</xsl:call-template>
+        </xsl:if>-->
+
+        <!--
+            02/26/12 - James
+            Styling
+        -->
+        <div class="container" id="i">
+
+        <xsl:copy-of select="$main_body"/>
+        <!--
+            02/26/12 - James
+            (Moved <hr/> within the <div class="footer"/> element)
+        -->
+        <div class="footer">
+          <hr/>
+          <div class="maintainers">
+            <xsl:text>This service is maintained by </xsl:text>
+            <xsl:call-template name="maintainers"/>
+          </div>
+          <div id="validator">
+            <span class="floatright"><a href="http://validator.w3.org/check?uri=referer">
+              <img style="border-width: 0pt" 
+                   alt="Valid XHTML 1.0!" 
+                   height="31"
+                   width="88" 
+                   src="/icons/valid-xhtml10.png"/>
+            </a></span>
+          </div>
+        </div>
+
+        <!--
+            02/26/12 - James
+            Styling
+        -->
+      </div>
+
+      </body>
+    </html>
+  </xsl:template>
+</xsl:stylesheet>
