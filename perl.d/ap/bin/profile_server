@@ -1,0 +1,10 @@
+#!/usr/bin/perl
+
+use lib qw(/home/aupro/ap/perl/lib);
+use CGI::Fast qw/-utf8/;
+use AuthorProfile::Web;
+
+while (my $q = new CGI::Fast) {
+  my $app = new AuthorProfile::Web(QUERY => $q); 
+  $app->run();
+}

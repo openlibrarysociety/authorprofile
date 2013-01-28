@@ -1,0 +1,13 @@
+#!/bin/bash
+
+## A script to update the author list pages for a single author
+
+if [ -z "$1" ]; then 
+    echo "Usage: $0 [AUTHOR ID]"
+    exit 1
+fi
+PSID=$1
+
+~/ap/perl/bin/create_authors_pages $PSID
+~/ap/perl/bin/list_authors
+exit $?

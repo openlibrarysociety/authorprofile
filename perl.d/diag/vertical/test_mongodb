@@ -1,0 +1,59 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use lib qw( /home/aupro/usr/lib/perl  /home/aupro/ap/perl/lib);
+use Data::Dumper;
+use MongoDB;
+use MongoDB::OID;
+
+use AuthorProfile::Common qw(
+                              put_in_mongodb
+                              get_from_mongodb
+                           );
+
+#http://search.cpan.org/dist/MongoDB/lib/MongoDB/Tutorial.pod
+
+my $conn = MongoDB::Connection->new;
+my $db = $conn->authorprofile;
+my $users = $db->vid;
+
+print Dumper $users->find({'aunex' => qr/li.*/i});
+exit;
+
+my @stored;
+
+eval { 
+  @stored=AuthorProfile::Common::get_from_mongodb($users,{"name" => "Joe"});
+};
+if($@) {
+  die $!;
+}
+#my $stored=AuthorProfile::Common::put_in_mongodb($users,"fionn","name");
+
+print Dumper $stored[0];
+#print Dumper ref(@stored);
+#print keys @stored;
+exit;
+
+$users->insert({
+                "name" => "Joe",
+                "age" => 52,
+                "likes" => [qw/skiing math ponies/]
+               });
+
+my $all_users = $users->find;
+my $some_users = $users->find({"name" => "Joe"});
+
+my $obj=$some_users->next;
+print $obj;
+exit;
+
+my $geeks = $users->find({"likes" => "math"});
+my $john = $users->find({"name" => qr/joh?n/i});
+my $id = $users->insert({"name" => "Bill"});
+
+$users->update({"_id" => $id}, {'$inc' => {'age' => 1}});
+$users->update({"_id" => $id}, {'$push' => {'likes' => 'reading'}});
+$users->update({"_id" => $id}, {'$set' => {'_id' => 'joe_schmoe'}});

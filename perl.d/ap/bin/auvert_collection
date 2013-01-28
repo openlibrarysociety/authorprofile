@@ -1,0 +1,116 @@
+#!/usr/bin/perl
+
+use lib qw( /home/aupro/ap/perl/lib /home/aupro/usr/lib/perl );
+
+use strict;
+use File::Temp qw(tempdir); 
+
+use BerkeleyDB;
+use AuthorProfile::Conf;
+use Mamf::Common qw(integrate_file integrate_dir);
+use AuthorProfile::Auvert qw(auvert_file_life 
+                             auvert_dir 
+                             process_in_file_time_start
+                             process_in_file_time_end
+                             mark_all_files_as_processed);
+use AuthorProfile::Common qw(get_mongodb_collection);
+
+use Data::Dumper;
+## run parameter: do clean up of /tmp/, set to 0 or 1
+my $debug=0;
+
+## constants
+my $home_dir=$ENV{'HOME'};
+
+# From wotan.liu.edu
+#my $ap_dir="/opt/home/mamf/opt/amf/ap";
+#my $input_dir="$home_dir/opt/amf/3lib/";
+#my $files_db_file="$home_dir/var/auvert/in_files.db";
+
+my $ap_dir="$home_dir/ap/amf/auverted";
+my $input_dir="$home_dir/ap/amf/3lib/";
+my $files_db_file="$home_dir/ap/var/auvert/in_files.db";
+
+## check database
+
+#`db4.7_verify $files_db_file` and die;
+
+binmode(STDOUT,"utf8");
+
+## open db, create if not there
+
+my $in_files_db;
+
+#my $in_files_db = new BerkeleyDB::Hash
+#    -Filename => $files_db_file,
+#    -Flags    => DB_CREATE or die $!;
+
+#if($@) { die $BerkeleyDB::Error; }
+#if(not $in_files_db) { die $!; }
+
+## Test for the "forced" flag - assume that anything passed 
+## before the filename(s) signify that the following auversions are to "force" the regeneration of comments...
+
+my $forced=0;
+if(defined($ARGV[1])) {
+  $forced=1;
+}
+
+## input can be a file or directory
+my $in=$ARGV[0];
+
+#my $g_collec=AuthorProfile::Common::get_mongodb_collection($threelib_collec,'auversion');
+
+chomp $in;
+## if it is a file
+if(-f $in) {
+  &process_file($in);
+}
+elsif(-d $in) {
+  &process_dir($in);
+}
+else {
+  print "Fatal Error!: no such file or directory \"$in\".\n";
+}
+die "Fatal Error: No AMF-XML records have been found in $in\n";
+
+sub process_dir {
+  my $in_dir=shift;
+  if(not $in_dir) {
+    die 'fatal error: empty parameter passed to process_dir';
+  }
+  print("processing $in_dir...\n");
+  my @files = `find $in_dir -name '*.amf.xml'`;
+  if(not @files) {
+    foreach my $subdir (`find $in_dir -type d`) {
+      chomp $subdir;
+      next if $subdir eq $in_dir;
+      print "recursing into $subdir...\n";
+
+      process_dir($subdir);
+    }
+  }
+  foreach my $file (@files) {
+    print "processing $file\n";
+    chomp $file;
+    &process_file($file);
+  }
+}
+
+sub process_file {
+
+#  if(not $in_files_db) { die $in_files_db; }
+
+  my $in_file=shift;
+  #print("processing $in_file...\n");
+  ## returns true if
+# file needs processing
+  my $file_data_with_key;
+  my $collec=AuthorProfile::Common::get_mongodb_collection(AuthorProfile::Auvert::get_auversion_collec_name($in_file),'auversion');
+
+  $file_data_with_key=&process_in_file_time_start($in_file,$collec,$forced);
+  &auvert_file_life("$in_file");
+#  &process_in_file_time_end($file_data_with_key,$in_files_db);
+  my $results=process_in_file_time_end($file_data_with_key,$collec);
+  die $results;
+}

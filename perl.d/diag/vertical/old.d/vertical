@@ -1,0 +1,1299 @@
+0;136;0c#!/usr/bin/perl
+
+## enforce strict pragma
+use strict;
+## warn about possible problem
+use warnings;
+
+use lib qw( /home/mamf/lib/perl /home/mamf/usr/lib/perl );
+
+## used modules, in alphabetical order
+use BerkeleyDB;
+use Data::Dumper;
+use File::Basename;
+use File::Path qw(make_path);
+use AuthorProfile::Auvert qw( authorname_to_filename
+                              normalize_name );
+use Mamf::Common qw( mp_retrieve
+                     get_root_from_file
+                     mp_store
+                     put_in_db_mp
+                     get_from_db_mp );
+#use AuthorProfile::Common qw( add_status
+#                              get_aunexes_per_docid
+#                              strip_ap_filename );
+use AuthorProfile::Commontok2 qw( add_status
+                                  get_aunexes_per_docid
+                                  strip_ap_filename );
+
+use File::Slurp;
+use IO::File;
+use Data::MessagePack;
+use Text::Levenshtein qw( distance );
+use XML::LibXML;
+use XML::LibXSLT;
+
+use Carp::Assert;
+use AuthorProfile::Networktok qw( vema_db_retrieve
+                                  store_vema_values
+                                  compare_nodes_using_poma );
+
+use Date::Format;
+use List::Util qw(shuffle);
+use File::Temp qw/ tempfile tempdir /;
+use File::Compare;
+use File::Copy;
+
+use Encode;
+use utf8;
+
+binmode(STDOUT,"utf8");
+
+# Ensure that only one instance of this script it run on the server.
+#use Sys::RunAlone;
+
+######################################
+
+## namespace constants
+my $amf_ns="http://amf.openlib.org";
+my $acis_ns="http://acis.openlib.org";
+my $xml_ns="";
+my $g_acis_root_attr_const='http://acis.openlib.org/2007/doclinks-relations';
+
+######################################
+
+# LibXML global handlers. 
+my $dom=XML::LibXML->new();
+my $xslt = XML::LibXSLT->new();
+$dom->keep_blanks(0);
+# 01/07/11 - James: To increase efficiency, just use one set of global handles.
+my $doc=undef;
+my $root_elem=undef; 
+my $parser=XML::LibXML->new();
+
+######################################
+
+# Environmental variables
+
+my $home_dir=$ENV{'HOME'};
+
+######################################
+
+# Input directory and file paths
+my $auma_pack_file="$home_dir/opt/var/auma.pack";
+my $poma_pack_file="$home_dir/opt/var/poma.pack";
+my $acis_dir="$home_dir/opt/amf/3lib/am";
+my $ap_dir="/opt/home/mamf/opt/amf/ap";
+
+
+# Output directory and file paths
+my $g_vema_db_dir='/opt/wotan/home/mamf/opt/var/vertical';
+my $g_vema_db_file='vema.db';
+
+if(not -d $g_vema_db_dir) { die "vema database dir doesn't exist!"; }
+if(not -f ($g_vema_db_dir . '/' . $g_vema_db_file)) { die "vema database file doesn't exist!"; }
+
+
+#######################################
+
+# Global variables
+
+# The maximum binary distance for the exploration of specific aunex.
+my $g_maxd=2;
+my $g_max_nodes=100000;
+
+my $g_verbose=3;
+
+my $g_statuses_found=undef;
+my $g_aunexes=undef;
+my $g_all_auth=0;
+my $g_parsed_texts=undef;
+
+my $g_input=undef;
+
+my $g_parsing_dir=0;
+
+#########################################
+
+# The auma (author master data structure)
+
+my $auma=undef;
+
+# Flag for forcing the regeneration of the auma.
+
+my $g_force_auma_regen=0;
+
+sub init_auma {
+  ## check if auma is old,
+  if(not -f $auma_pack_file or (-M $auma_pack_file) > 1 or $g_force_auma_regen == 1) {
+    if($g_verbose > 1) { 
+      print("\(Re\)generating the \$auma...\n"); 
+    }
+    my $refresh_auma_results=`ap_top`;
+    if($g_verbose > 1) { 
+      print("Retrieving the \(re\)generated \$auma...\n"); }
+    $auma=mp_retrieve($auma_pack_file);
+  }
+  else {
+    if($g_verbose > 1) { print "loading auma\n"; }
+    $auma=mp_retrieve($auma_pack_file);
+  }
+  
+}
+
+#########################################
+
+# The poma (pecking order matrix data structure)
+
+my $poma=undef;
+
+my $g_force_poma_regen=0;
+
+# Retrieving the $poma from /poma.pack
+# NOTE: This assumes that the poma.pack is still refreshed according to crontab
+eval { $poma=mp_retrieve($poma_pack_file); };
+if($@) {
+  warn("FATAL ERROR: Could not retrieve poma structure - $!\n");
+  exit;
+}
+
+
+#########################################
+
+# The vema (vertical information matrix data structure)
+
+# $vema->{DEST}->{'d'} = distance to START node, in binary steps.
+# $vema->{DEST}->{'p'} = a space separeted path of intermediate nodes
+# $vema->{DEST}->{'e'} = START
+# $vema->{DEST}->{'w'} = weight of the path
+# DB's are values
+# the keys are the identifiers of the target node
+# they are NOT the identifiers of the source nodes!
+# they, essentially, convert the source node to target nodes
+
+my $vema=undef;
+
+# Construct the BerkDB ENV
+
+my $g_vema_db_env;
+$g_vema_db_env = new BerkeleyDB::Env
+                  -Home   => $g_vema_db_dir,
+                  -Flags  => DB_CREATE| DB_INIT_CDB | DB_INIT_MPOOL
+  or die "cannot open database: $BerkeleyDB::Error\n";
+
+my $g_vema_db_file_path=undef;
+
+# Construct the handler-object for the BerkDB that stores the $vema values
+my $g_vema_db = new BerkeleyDB::Hash
+  -Filename => $g_vema_db_file,
+  -Flags    => DB_CREATE,
+  -Env      => $g_vema_db_env
+        or die "cannot open database: $BerkeleyDB::Error\n";
+
+#########################################
+
+# The noma ("node master" matrix data structure)
+# $noma->{[SID]}->{'last_change_date'}
+# $noma->{[SID]}->{'began_calculation'}
+# $noma->{[SID]}->{'ended_calculation'}
+# $noma->{[SID]}->{'furthest_depth'}
+
+# James proposes:
+# $noma->{[SID]}->{'last_path'}
+
+my $g_noma_db_file="/opt/wotan/home/mamf/opt/var/vertical/noma.db";
+
+# Construct the handler-object for the BerkDB that stores the $noma values
+my $g_noma_db = new BerkeleyDB::Hash
+  -Filename => $g_noma_db_file,
+  -Flags    => DB_CREATE;
+
+#########################################
+
+# The global edge calculated for the aunexs of each author for each given ACIS record.
+# With the $store_papers flag set, the edges can be stored into a MessagePack file for convenient recalculations.
+# This is useful for debugging.
+
+my $edges=undef;
+my $edges_tmp_pack_file="$home_dir/opt/var/edges.tmp.pack";
+my $g_store_edges=0;
+
+sub init_edges {
+  if($g_store_edges == 1 and -f $edges_tmp_pack_file) {
+    $edges=mp_retrieve($edges_tmp_pack_file);
+  }
+}
+
+
+
+#########################
+
+# The invocation of the main() function.
+&main();
+
+#########################
+
+sub parse_dir {
+  my $dir=$_[0];
+  if(not defined($dir)) {
+    return 1;
+  }
+  $g_parsing_dir=1;
+  # TO DO: recursion!
+  my @files=`find $dir -name '*.amf.xml'`;
+  shuffle(@files);
+  foreach my $file (@files) {
+    chomp $file;
+    if ($g_verbose > 0) { print("Processing $file...\n"); }
+    if($file eq ($files[$#files])) {
+      $g_parsing_dir=0;
+    }
+    &parse_file($file);
+  }
+  return 0;
+}
+
+sub parse_file {
+
+  my $file=$_[0];
+  if(not defined($file)) {
+    return 1;
+  }
+
+  chomp $file;
+  if(-d $file) {
+    &parse_dir($file);
+    return 0;
+  }
+  $doc=$dom->parse_file($file);
+  $root_elem=$doc->documentElement();
+
+
+
+  my $person_elem=$root_elem->getElementsByTagName('person')->[0];
+  my $sid_elem=$root_elem->getElementsByTagNameNS($acis_ns, 'shortid')->[0];
+  my $sid=$sid_elem->textContent();  
+
+  my $record_type=undef;
+
+  my $begin_calc_time=time();
+
+  # Store within the noma the time at which the calculation of the vertical integration was initiated.
+
+  # $noma->{[SID]}->{'began_calculation'}
+  # $noma->{[SID]}->{'ended_calculation'}
+  # $noma->{[SID]}->{'furthest_depth'}
+  
+  # James proposes:
+  # Really, a debug...
+  # Avoid this!
+  # $noma->{[SID]}->{'last_path'}
+
+  # IMPOSE AN ADDITIONAL TERMINAL CONDITION:
+  # Maximum number of authors reached from the start_author
+  # Hash: constructed for every neighbor
+
+  $g_noma_db=&AuthorProfile::Common::open_db($g_noma_db_file);
+  my $noma_record=&AuthorProfile::Common::get_from_db_json($g_noma_db,$sid);
+
+  $noma_record->{'began_calculation'}=$begin_calc_time;
+
+  &AuthorProfile::Common::put_in_db_json($g_noma_db,$sid,$noma_record);
+  &AuthorProfile::Common::close_db($g_noma_db);  
+
+  
+
+  # This distinguishes between ACIS records and auverted /ap records.
+  foreach my $root_attr ($root_elem->attributes()) {
+#    if($root_attr->getData() eq 'http://acis.openlib.org/2007/doclinks-relations') { $record_type=0; }
+    if($root_attr->getData() eq $g_acis_root_attr_const) { $record_type=0; }
+    else { $record_type=1; }
+  }
+
+  # If the values for $edges was not retrieved from the .tmp.pack file...
+  if(not defined($edges)) {
+    # ...generate them anew...
+    if($record_type == 0) { $edges=&find_aun_for_auth_texts($auma, $file); }
+    elsif($record_type == 1) {
+      #      my $tmp_aunex=&get_aunexes_from_auverted_record($root_elem);
+      $edges=&find_aun_for_aun_text($root_elem, $auma);
+    }
+  }
+
+  &generate_vema($edges, $poma);
+
+  $edges=undef;
+  $root_elem=undef;
+  $doc=undef;
+
+  $g_noma_db=&AuthorProfile::Common::open_db($g_noma_db_file);
+  $noma_record=&AuthorProfile::Common::get_from_db_json($g_noma_db,$sid);
+#  print(Dumper $noma_record);
+#  exit;
+  $noma_record->{'furthest_depth'}=$g_maxd;
+  $noma_record->{'ended_calculation'}=time();
+  &AuthorProfile::Common::put_in_db_json($g_noma_db,$sid,$noma_record);
+  &AuthorProfile::Common::close_db($g_noma_db);  
+
+  if ($g_verbose > 0) { print("Vertical integration data successfully generated for $file.\n"); }
+
+  return 0;
+}  
+
+#####################################################
+
+sub get_root_from_file_libxml {
+  my $file=shift;
+  my $dom=XML::LibXML->new();
+  if(-f $file) { my $doc=$dom->parse_file($file); }
+  else { return; }
+  if(defined($doc)) { return $doc->documentElement(); }
+  else { return; }
+}
+
+# 01/14/11 - James
+
+  # This relates aunexes to author sID's that are only 1 binary step away from an author.
+  # $aun_auth_papers->{always author}->{always aunex}
+# This draws solely upon the data available in the ACIS author records (currently located in ~/opt/amf/3lib/am) in $acis_dir.
+
+sub find_aun_for_auth_texts {
+
+  my $aun_auth_papers;
+
+  # Global structure
+  my $auma=shift;
+#  my $auth_file=shift;
+
+  my $input_files=shift;
+
+  my @files;
+  $files[0]=$input_files;
+
+# The edges are to be calculated for each record as each record is processed.
+
+#  if($all_auth) {
+#    @files=undef;
+#    @files=`find $acis_dir -name '*.amf.xml'`;
+#  }
+
+  foreach my $file (@files) {
+    chomp $file;
+    if ($g_verbose > 0) { print("Processing $file...\n"); }
+
+    my $root_element=&get_root_from_file($file);
+    if(not defined($root_element)) {
+      warn("WARNING: Could not parse $file.\n");
+      next;
+    }
+
+    my $person_element=$root_element->getChildrenByTagName('person')->[0];
+
+    # 01/14/11 Get the sID of the author whose information this record holds.
+    my $owner_id=$person_element->getChildrenByTagNameNS($acis_ns, 'shortid')->[0]->textContent();
+
+    # 01/11/11 - James: Obtain statuses in order to differentiate between unregistered and registered authors.
+    $root_element=&AuthorProfile::Common::add_status($root_element,$auma); 
+
+    my @text_elems;
+    eval { @text_elems=$root_element->firstChild()->getChildrenByTagName('isauthorof'); };
+    if($@) {
+      if ($g_verbose > 0) { print("$file bears no accepted texts.\n"); }
+      next;
+    }
+
+
+    my $parsed_texts;
+
+    my @hasauthor;
+    my $text;
+
+
+
+    my $status;
+    my $name;
+    my $k;
+    my $collab_str;
+    foreach my $text_elem (@text_elems) {
+      $text_elem=$text_elem->getChildrenByTagName('text')->[0];
+      $text=$text_elem->getAttribute('ref');
+      if ($g_verbose > 0) { print("Processing $text...\n"); }
+      if(defined($parsed_texts->{$text})) {
+        if ($g_verbose > 0) { print("$text already parsed.\n"); }
+        next;
+      }
+      # Find the total amount of authors for this <text/>.
+      $k=&get_text_total_auth($text_elem);
+      if($k <= 0) {
+        warn("WARNING: Could not find the total amount of authors for $text.\n");
+        next;
+      }
+      if($k == 1) {
+        if ($g_verbose > 0) { print("$text only has one author, skipping $text...\n"); }
+        next;
+      }
+      # Find the collaboration strength by which to increment (the inverse value of) a single edge's weight for this <text/>. 
+      $collab_str=1/($k - 1);
+
+      foreach my $name_elem ($text_elem->getChildrenByTagName('hasauthor')) {
+        $name_elem=$name_elem->getChildrenByTagName('person')->[0]->getChildrenByTagName('name')->[0];
+        $status=$name_elem->getAttribute('status');
+        if($status == 0) {
+          $name=$name_elem->textContent();
+          $name=&decode_utf8($name);
+#          $name=normalize_name($name);
+          if(not defined ($aun_auth_papers->{'w'}->{$owner_id}->{$name})) {
+            if ($g_verbose > 0) { print("Found primary aunex $name for author $owner_id.\n"); }
+          }
+          $aun_auth_papers->{'w'}->{$owner_id}->{$name}+=$collab_str;
+        }
+      }
+      my $txttot=$#text_elems + 1;
+      if ($g_verbose > 0) { print("Found a total of $txttot texts for author $owner_id.\n"); }
+    }
+  }
+
+  # Calculate the symmetric weighted edges between authors and primary aunexes by finding the inverse value of the summation of the collaboration strengths obtained for every <text/> collaborated upon by both author $owner_id and aunex $name.
+  foreach my $auth (keys %{$aun_auth_papers->{'w'}}) {
+    foreach my $aun (keys %{$aun_auth_papers->{'w'}->{$auth}}) {
+      $aun_auth_papers->{'w'}->{$auth}->{$aun}=1/($aun_auth_papers->{'w'}->{$auth}->{$aun});
+    }
+  }
+  
+  if($g_store_edges) { mp_store($aun_auth_papers, $edges_tmp_pack_file); } 
+  
+  return $aun_auth_papers;
+}
+
+sub get_text_total_auth {
+  my $text_elem=shift;
+  my $collab_str=0;
+  foreach my $name_elem ($text_elem->getChildrenByTagName('hasauthor')) {
+    $collab_str++;
+  }
+  return $collab_str;
+}
+
+sub find_aun_for_aun_text {
+
+  my $aun_aun_edges;
+
+  # Global structure
+
+  # This processes one auverted record per invocation.
+  my $root_element=shift;
+
+  my $auma=shift;
+
+  if ($g_verbose > 0) { print("Processing auverted record...\n"); }
+
+## NOTE RETURN HERE
+
+  $root_element=&AuthorProfile::Common::add_status($root_element, $auma); 
+
+  my @text_elems;
+  eval { @text_elems=$root_element->getChildrenByTagName('text'); };
+  if($@) {
+    if ($g_verbose > 0) { print("Auverted record bears no accepted texts.\n"); }
+    next;
+  }
+
+  my $parsed_texts;
+  
+  my @hasauthor;
+  my $text;
+  
+
+  
+  my $status;
+  my $name;
+  my $k;
+  my $collab_str;
+
+  my $init_aun=undef;
+  my $neighbors=undef;
+  my $total_neighbors=undef;
+
+  foreach my $text_elem (@text_elems) {
+    $text=$text_elem->getAttribute('id');
+    if ($g_verbose > 0) { print("Processing $text...\n"); }
+    if(defined($parsed_texts->{$text})) {
+    }
+    $k=&get_text_total_auth($text_elem);
+    if($k <= 0) {
+      warn("WARNING: Could not find the total amount of authors for $text.\n");
+      next;
+    }
+    if($k == 1) {
+      if ($g_verbose > 0) { print("$text only has one author, skipping $text...\n"); }
+      next;
+    }
+    # Find the collaboration strength by which to increment (the inverse value of) a single edge's weight for this <text/>. 
+    $collab_str=1/($k - 1);
+
+    
+    foreach my $name_elem ($text_elem->getChildrenByTagName('hasauthor')) {
+      $name_elem=$name_elem->getChildrenByTagName('person')->[0]->getChildrenByTagName('name')->[0];
+      $status=$name_elem->getAttribute('status');
+      if($status == 0) {
+        $name=$name_elem->textContent();
+        # The primary aunex, in this case, is merely the aunex specified in the auverted record being parsed.
+        $name=&decode_utf8($name);
+#        $name=normalize_name($name);
+#        print $name, "\n";
+#        exit;
+
+        $init_aun=$name;
+        
+
+
+        # From here, obtain all of the neighbors
+
+        if ($g_verbose > 0) { print("Found author $init_aun.\n"); }
+
+        $neighbors=&find_aunexes_for_aun($init_aun);
+
+        foreach my $prim_aun (keys %{$neighbors->{'w'}}) {
+          if(not defined ($aun_aun_edges->{'w'}->{$init_aun}->{$prim_aun})) {
+            if ($g_verbose > 0) { print("Found primary aunex $prim_aun for initial aunex $init_aun.\n"); }
+            $aun_aun_edges->{'w'}->{$init_aun}->{$prim_aun}=$neighbors->{'w'}->{$prim_aun};
+          }
+        }
+      }
+    }
+  }
+  my $txttot=$#text_elems + 1;
+  if ($g_verbose > 0) { print("Found a total of $txttot texts specified for the auverted record.\n"); }
+
+  # $aun_aun_edges->{'w'}->{$aun_1}->{$aun_2}
+  
+  # Calculate the symmetric weighted edges between authors and primary aunexes by finding the inverse value of the summation of the collaboration strengths obtained for every <text/> collaborated upon by both author $owner_id and aunex $name.
+  foreach my $aun_1 (keys %{$aun_aun_edges->{'w'}}) {
+    foreach my $aun_2 (keys %{$aun_aun_edges->{'w'}->{$aun_1}}) {
+      $aun_aun_edges->{'w'}->{$aun_1}->{$aun_2}=1/($aun_aun_edges->{'w'}->{$aun_1}->{$aun_2});
+    }
+  }
+  
+  if($g_store_edges) { mp_store($aun_aun_edges, $edges_tmp_pack_file); } 
+  
+  return $aun_aun_edges;
+}
+
+
+sub get_aunexes_from_auverted_record {
+
+  my $root_element=shift;
+
+  my $person_element=$root_element->getChildrenByTagName('person')->[0];
+
+  $root_element=&AuthorProfile::Common::add_status($root_element, $auma); 
+
+  if ($g_verbose > 0) { print("Searching for the first aunex in the auverted record...\n"); }
+
+  my @text_elems;
+  eval { @text_elems=$root_element->getChildrenByTagName('text'); };
+  if($@) {
+    warn("Auverted record bears no accepted texts.\n");
+    return undef;
+  }
+  
+  my @hasauthor;
+  my $text;
+  my $status;
+  my $name;
+
+  # Given that the "auverted" /ap record files are being parsed more than once, this should be a global variable.
+
+  my $k=0;
+  my $collab_str;
+
+  foreach my $text_elem (@text_elems) {
+    $text=$text_elem->getAttribute('ref');
+    if ($g_verbose > 0) { print("Parsing text $text...\n"); }
+
+    foreach my $name_elem ($text_elem->getChildrenByTagName('hasauthor')) {
+      if(not defined($name_elem->getChildrenByTagName('person')->[0])) {
+        if ($g_verbose > 0) { print("<hasauthor/> element bears no <person/> element.\n"); }
+        next;
+      }
+      if(not defined($name_elem->getChildrenByTagName('person')->[0]->getChildrenByTagName('name')->[0])) {
+        if ($g_verbose > 0) { print("<hasauthor/> element bears no <name/> element.\n"); }
+        next;
+      }
+      $name_elem=$name_elem->getChildrenByTagName('person')->[0]->getChildrenByTagName('name')->[0];
+      $status=$name_elem->getAttribute('status');
+      if($status == 0) {
+        $name=$name_elem->textContent();
+        if(defined($name)) {
+          $name=&decode_utf8($name);
+          return $name;
+        }
+      }
+      else { next; }
+    }
+  }
+  warn("Auverted record did not contain any authors.\n");
+  return undef;
+}
+
+sub find_aunexes_for_aun {
+
+  my $aunex=shift;
+
+  if(not defined($aunex)) {
+    warn("WARNING: Empty value for \$aunex passed to find_aun_for_aun.\n");
+    return 'error';
+  }
+
+  $aunex=&decode_utf8($aunex);
+
+  # $aunexes->{'a'}=@(neighboring aunexes)
+  # $aunexes->{'w'}->{aunex}=weighted edge between initial aunex and neighboring aunex
+
+  # In order to increase efficiency, there is both a global and local function for the aunexes.
+  # This is the $aunexes structure local to this function:
+  my $aunexes;
+
+  # Here is where the global structure $aunexes provides its utility:
+
+  # Global $aunexes structure:
+  # $aunexes->{'a'}=@(every aunex for which the neighbors have already been found, and the edges stored)
+  # $aunexes->{'w'}->{$aun1}->{$aun2}
+
+#  print "find_aunexes_for_aun - before normalization: $aunex\n";
+  my $norm_aun=&normalize_name($aunex);
+#  print "after normalization: $norm_aun\n";
+#  <STDIN>;
+  my $aun_file=&authorname_to_filename($norm_aun);
+
+  $aun_file="$ap_dir/$aun_file";
+  
+  if(not defined($aun_file) or not -f $aun_file) {
+
+    warn("WARNING: Could not retrieve file name for $aunex in find_aun_for_aun.\n");
+    return 'error';
+  }
+  my $root_element;
+  eval { $root_element=$parser->parse_file($aun_file)->documentElement(); };
+  if($@) {
+    warn("WARNING: Could not create file parser for $aun_file.\n");
+    return 'error';
+  }
+#  my $root_element=&get_root_from_file($aun_file);
+  if(not defined($root_element)) {
+    warn("WARNING: Could not parse $aun_file.\n");
+    next;
+  }
+
+  my $person_element=$root_element->getChildrenByTagName('person')->[0];
+
+  $root_element=&AuthorProfile::Common::add_status($root_element, $auma); 
+
+  if ($g_verbose > 0) { print("Searching for neighbors for $aunex...\n"); }
+
+  my @text_elems;
+  eval { @text_elems=$root_element->getChildrenByTagName('text'); };
+  if($@) {
+    if ($g_verbose > 0) { print("$aun_file bears no accepted texts.\n"); }
+    next;
+  }
+  
+  my @hasauthor;
+  my $text;
+  my $status;
+  my $name;
+
+  # Given that the "auverted" /ap record files are being parsed more than once, this should be a global variable.
+
+  my $k=0;
+  my $collab_str;
+
+
+  foreach my $text_elem (@text_elems) {
+    $text=$text_elem->getAttribute('ref');
+    if ($g_verbose > 0) { print("Parsing text $text...\n"); }
+
+    if(defined($g_parsed_texts->{'t'}->{$text})) {
+      if ($g_verbose > 0) { print("$text already parsed.\n"); }
+      next;
+    }
+    # Find the total amount of authors for this <text/>.
+
+    # This should also be stored into a structure, given the multiple parsing operations that this script undertakes.
+    if(not defined($g_parsed_texts->{'k'}->{$text})) { $g_parsed_texts->{'k'}->{$text}=&get_text_total_auth($text_elem); }
+    $k=$g_parsed_texts->{'k'}->{$text};
+    if($k <= 0) {
+      warn("WARNING: Could not find the total amount of authors for $text.\n");
+      next;
+    }
+    if($k == 1) {
+      if ($g_verbose > 0) {  print("Text $text only has one author, skipping $text...\n"); }
+      next;
+    }
+    # Find the collaboration strength by which to increment (the inverse value of) a single edge's weight for this <text/>. 
+    $collab_str=1/($k - 1);
+
+
+
+    foreach my $name_elem ($text_elem->getChildrenByTagName('hasauthor')) {
+      if(not defined($name_elem->getChildrenByTagName('person')->[0])) {
+        if ($g_verbose > 0) { print("<hasauthor/> element bears no <person/> element.\n"); }
+        next;
+      }
+      if(not defined($name_elem->getChildrenByTagName('person')->[0]->getChildrenByTagName('name')->[0])) {
+        if ($g_verbose > 0) { print("<hasauthor/> element bears no <name/> element.\n"); }
+        next;
+      }
+      $name_elem=$name_elem->getChildrenByTagName('person')->[0]->getChildrenByTagName('name')->[0];
+      $status=$name_elem->getAttribute('status');
+      if($status == 0) {
+
+        $name=$name_elem->textContent();
+        if($name eq $aunex) { next; }
+        $name=&decode_utf8($name);
+#        $name=normalize_name($name);
+        
+        # Store each aunex that lies 1 binary step away from the author.
+        
+        if(not defined($aunexes->{'w'}->{$name})) {
+          push(@{$aunexes->{'a'}->{$aunex}}, $name);
+        }
+        $aunexes->{'w'}->{$name}+=$collab_str;
+      }
+    }
+  }
+
+  undef $root_element;
+  
+  foreach my $aun_2 (keys %{$aunexes->{'w'}}) {
+    $aunexes->{'w'}->{$aun_2}=1/($aunexes->{'w'}->{$aun_2});
+  }
+
+  # Before returning $aunexes, store its values into the global structure $aunexes.
+
+  my $tot_aun;
+  if(defined($aunexes->{'a'}->{$aunex})) {
+    $tot_aun=@{$aunexes->{'a'}->{$aunex}};
+    if ($g_verbose > 0) { print("Found a total of $tot_aun neighbors for $aunex.\n"); }
+  }
+  return $aunexes;
+}
+
+# This is the primary function of the entire script.  It utilizes two functions exported by Network.pm, namely:
+# &store_vema_values
+# &vert_go_further_from
+
+# As a result, all other functions are really, at this point, unnecessary in this script.  I continue to include these deprecated functions only so that, should I have left something vital outside of the implementation of the current features of this script, I may more easily implement necessary measures by drawing upon previously drafted code.
+
+# The generation of the $vema isn't ended for each author until the
+# maxd (referring the maximum binary distance to explore for eaching
+# neighboring aunex) is reached by nested loops within the function.
+# I purposely avoided the calculation of the resident components for
+# each node (as was utilized in the finding of neighboring nodes
+# within the script compose_poma), as we are not calculating a
+# network, but simply a tree.  The trees for each author with any
+# connection to an aunex (a status '0' collaborator for any given
+# accepted text) are explored by first cycling through each registered
+# author (for which an ACIS record exists), which leads to the aunex
+# of every collaborator of every text specified within the ACIS
+# records of these authors.  From these aunexes, then, is the tree
+# calculated by the exploration of neighboring aunexes found within
+# the auverted ap records, first, for each one of these primary
+# "aunexes
+
+sub generate_vema {
+
+  my $edges=shift;
+
+  my $poma=shift;
+  my $dist;
+  my $r;
+
+  # To give a visualization of the completion of vema exploration.
+  my $author_counter=1;
+  my $total_authors=scalar(keys %{$edges->{'w'}});
+
+  # For each author in the generated edges...
+  foreach my $init_auth (keys %{$edges->{'w'}}) {
+    # Start with a distance of 0
+    $dist=0;
+    # Clear the results for vert_go_further_from
+    $r=undef;
+
+    # Manually set $r to reflect that the $init_auth is 0 steps from itself.
+    $r->{'p'}->{$dist}->{$init_auth}=$init_auth;
+
+    # To give a visualization of the completion of vema exploration.
+    if ($g_verbose > 0) { print("Processing author $init_auth...\n"); }
+    if ($g_verbose > 0) { print("Author $author_counter of $total_authors.\n"); }
+
+    # The weight of an edge.
+    my $weight;
+
+    # To give a visualization of the completion of vema exploration.
+    my $aunex_counter=1;
+
+    # THIS IS WHERE THE RECORD TYPE CREATES A PROBLEM
+
+    my $total_aunexes=scalar(keys %{$edges->{'w'}->{$init_auth}});
+
+    my $total_nodes=$total_aunexes;
+
+
+    #DEBUG
+    if(not $total_authors) {
+      warn("error in edges structure\n");
+      exit;
+    }
+
+################################################################
+
+    # For each initial aunex for the initial author of the tree...
+    foreach my $init_aun (keys %{$edges->{'w'}->{$init_auth}}) {
+
+      # Set the distance to 0.
+      $dist=1;
+
+      # To give a visualization of the completion of vema exploration.
+      if ($g_verbose > 0) { print("Found primary aunex $init_aun for $init_auth...\n"); }
+      if ($g_verbose > 0) { print("Primary aunex $aunex_counter of $total_aunexes for author $author_counter of $total_authors.\n"); }
+#      <STDIN>;
+
+      # Manually set $r to reflect that the $init_aun is 1 step from $init_auth.
+      $r->{'p'}->{$dist}->{$init_aun}=$init_auth;
+
+      # Unlike with &find_aunexes_for_aun, this structure (produced by &find_aun_for_auth_texts) produced by does yield the Newman-style weights for each edge.
+      $weight=$edges->{'w'}->{$init_auth}->{$init_aun};
+      
+      # Transfer the edge weight to $r from $edges.
+      if($weight > 0) { $r->{'w'}->{$init_auth}->{$init_aun}=$weight; }
+      
+      # If the edge weight passed by $edges <= 0, warn the user and exit the script.
+      else {
+        warn("WARNING: Could not find edge weight for $init_auth and $init_aun.\n");
+        exit;
+      }
+
+      # Manually store the vema values at this point.
+      &store_vema_values($init_aun, $init_auth, $dist, $r, $g_vema_db, $g_verbose, $g_vema_db_env);
+
+      # The neighbors of a given aunex.
+      my $neighbors;
+
+      # The previous aunex at this point in the loop is the initial author (distance 0).
+      my $old_aunex->{$dist}=$init_auth;
+      $old_aunex->{$dist + 1}=$init_aun;
+      my $old_inner_counter=undef;
+      $old_inner_counter->{$dist}=$author_counter;
+      $old_inner_counter->{$dist + 1}=$aunex_counter;
+      my $old_n_index=undef;
+      $old_n_index->{$dist}=$total_authors;
+      $old_n_index->{$dist + 1}=$total_aunexes;
+
+      my $stored_neighbors;
+
+      # The first aunex to explore the neighbors of is the initial aunex (dist 1).
+      my $aunex=$init_aun;
+      my $i=1;
+
+      # Find the neighbors for the initial aunex.
+      $neighbors=&find_aunexes_for_aun($aunex);
+
+      my $probe_dist=$dist + 1;
+
+      $stored_neighbors->{$probe_dist}=$neighbors;
+
+      # Store the number of neighbors found for the initial aunex.
+      my $n_i=scalar(keys %{$neighbors->{'w'}});
+
+      if($total_nodes + $n_i > $g_max_nodes) {
+        warn("Maximum neighbor nodes exceeded at $probe_dist - skipping all further calculations for $aunex.\n");
+        last;
+      }
+      else {
+        $total_nodes+=$n_i;
+      }
+      
+      # Initialize $dist_2 with a value of 1 (dist 1).
+      my $new_neighbors;
+
+############################################################
+
+      # $dist_2 should never be less than 1.  'last' is the only manner by which to exit this loop.
+
+      my $i_2=1;
+      my $inner_counter=0;
+        
+      my $n_index=undef;
+
+      my $aunex_probe=undef;
+
+
+###################################################################################################
+
+      while($probe_dist > 0) {
+
+
+        # If $n_aun is undefined within the loop, an error has occurred.
+        #DEBUG
+        if(not defined($aunex)) {
+          if ($g_verbose > 0) { print(Dumper $probe_dist); }
+          exit;
+        }
+        
+        # If there are no $neighbors for $n_aun at this point and $dist_2 <= 2, exit the loop.
+        # This would mean that the exploration has exhausted all of the aunexes found for the primary aunex at this point.  Hence, the next primary aunex must, then, be explored.
+        
+        # If $n_aun__2 has been defined, then the inner loop has already run at least once.
+        if(defined($aunex_probe)) {
+
+          # 03/05/11 - Avoiding memory leak.
+          $r->{'p'}->{$probe_dist}=undef;
+          $r->{'w'}->{$aunex}=undef;
+
+          if($probe_dist == ($dist + 1)) { last; }
+
+          $probe_dist--;
+          
+          $neighbors=$stored_neighbors->{$probe_dist};
+          $aunex=$old_aunex->{$probe_dist};
+          $n_index=$old_n_index->{$probe_dist};
+          $inner_counter=($old_inner_counter->{$probe_dist}) + 1;
+
+          
+          while(not defined(($stored_neighbors->{$probe_dist})->{'a'}->{$old_aunex->{$probe_dist}}->[(($old_inner_counter->{$probe_dist}) + 1)])) {
+
+            # 03/05/11 - Avoiding memory leak.
+            $r->{'p'}->{$probe_dist}=undef;
+            $r->{'w'}->{$aunex}=undef;
+
+            if($probe_dist == ($dist + 1)) {
+
+              # 03/05/11 - Avoiding memory leak.
+              $stored_neighbors=undef;
+              # 03/05/11 - Avoiding memory leak.
+              $neighbors=undef;
+              # Might not be necessary, as both variables probably lose their value after breaking from the current loop.
+              last;
+            }
+
+            $probe_dist--;
+            $neighbors=$stored_neighbors->{$probe_dist};
+            $aunex=$old_aunex->{$probe_dist};
+            $n_index=$old_n_index->{$probe_dist};
+            $inner_counter=($old_inner_counter->{$probe_dist}) + 1;
+          }
+          # 03/05/11 - Avoiding memory leak.
+          $stored_neighbors->{($probe_dist + 1)}=undef;
+        }
+
+        if(not defined($n_index)) {
+          if(not $neighbors->{'a'}->{$aunex}) {
+#            die "here";
+            last;
+          }
+          # DEBUG
+#          print Dumper $aunex;
+          print Dumper $neighbors;
+          $n_index=scalar(@{$neighbors->{'a'}->{$aunex}});
+        }
+        
+########################################################
+
+        # This loop ends when every aunex held within neighbors has been explored.
+        # This ensures that each and every neighbor within a neighborhood is fully explored.
+        while($inner_counter < $n_index) {
+
+          # If the maximum distance hasn't been reached, increment the distance (as we are about to go further into the network).
+
+          #For visualization of generation progress.
+          my $nnum=$inner_counter + 1;
+          my $ntot=$n_index;
+
+          # $n_aun__2 is now the neighbor corresponding to the index $i_3 within the neighborhood stored by $neighbors.
+          $aunex_probe=$neighbors->{'a'}->{$aunex}->[$inner_counter];
+
+          if ($g_verbose > 0) { print("generate_vema: Probing $aunex_probe \(neighbor $nnum of $ntot\) for $aunex at distance $probe_dist from $init_aun \($aunex_counter of $total_aunexes\) from $init_auth \($author_counter of $total_authors\).\n"); }
+
+          # Construct the vema path for $n_aun__2 and store it in the vema database.
+          $r=&vert_go_further_from($init_auth, $aunex, $vema, $r, $probe_dist, $aunex_probe, $neighbors, $poma);
+
+          # Continue exploring further if the maximum distance has yet to be reached.
+          if($probe_dist < $g_maxd) {
+
+            # ...set the structure $new_neighbors to the $neighbors of the current secondary aunex...
+            $new_neighbors=&find_aunexes_for_aun($aunex_probe);
+
+            # Check to see if $n_aun__2 is an isolated aunex.
+            if(not keys %{$new_neighbors->{'w'}}) {
+              # If so, move to the next secondary aunex that isn't isolated.
+
+              if ($g_verbose > 0) { print("generate_vema: Skipping isolated neighbor $aunex_probe...\n"); }
+              $inner_counter++;
+              # 03/05/11 - Avoiding memory leak.
+              $new_neighbors=undef;
+              next;
+            }
+
+            # First, before going forward, store the previous set of neighbors.
+            $stored_neighbors->{$probe_dist}=$neighbors;
+            $old_aunex->{$probe_dist}=$aunex;
+            # Store index of the last neighborhood.
+            $old_n_index->{$probe_dist}=$n_index;
+            # Store the old neighborhood index counter.
+            $old_inner_counter->{$probe_dist}=$inner_counter;
+
+            $probe_dist++;
+
+            if ($g_verbose > 0) { print("generate_vema: Exploring the neighbors for $aunex_probe...\n"); }
+
+            # Set the neighbors to the newly found neighbors for the loop.
+            $neighbors=$new_neighbors;
+            $new_neighbors=undef;
+
+            # Set the predecessor aunex to the current aunex used for exploration.
+            $aunex=$aunex_probe;
+
+            #DEBUG
+            if(not defined($aunex)) {
+              print("ERROR: \$aunex not defined.\n");
+              exit;
+            }
+            #END DEBUG
+
+            # Set the new neighborhood index.
+            $n_index=scalar(@{$neighbors->{'a'}->{$aunex}});
+
+            if($total_nodes + $n_index > $g_max_nodes) {
+              warn("Maximum neighbor nodes exceeded at $probe_dist - skipping all further calculations for $aunex.\n");
+              last;
+            }
+            else {
+              $total_nodes+=$n_index;
+            }
+
+            # Reset the index counter for the next neighbordood.
+            $inner_counter=0;
+            
+            # Move to the next neighborhood.
+            next;
+          }
+          # If we're at the maximum distance, just explore every neighbor in the terminal neighborhood.
+          else {
+            $inner_counter++;
+          }
+        }
+        
+###########################################################################
+
+        # The neighborhood has been explored.  This could be any neighborhood, not just the terminal one.
+
+        if ($g_verbose > 0) { print("The inner loop has finished for the exploration of neighbors lying one step away from $aunex \(which is a distance of $probe_dist from $init_auth\).\n"); }
+        next;
+      }
+#####################################################################
+      if ($g_verbose > 0) { print("Finished exploring all neighbors for $init_aun\n"); }
+      $aunex_counter++;
+      next;
+    }
+#####################################################################
+    if ($g_verbose > 0) { print("Finished exploring all aunexes for author $init_auth.\n"); }
+    $author_counter++;
+    next;
+  }
+#####################################################################
+  return $vema;
+}
+
+sub proc_args {
+
+  my $input_var=shift;
+
+  if($input_var eq '--no-edges') {
+    $g_store_edges=0;
+    return;
+  }
+  if($input_var eq '--forced-auma-regen') {
+    $g_force_auma_regen=1;
+    return;
+  }
+  if($input_var eq '-q' or $input_var eq '--quiet') {
+    $g_verbose=0;
+    return;
+  }
+  if($input_var=~m|--maxd=|) {
+    my $maxd=$input_var;
+    $maxd=~s|--maxd=||;
+    if(not $maxd) {
+      warn("No maximum distance passed!\n");
+      return;
+    }
+    $g_maxd=$maxd;
+    return;
+  }
+  if($input_var=~m|-d|) {
+    my $maxd=$input_var;
+    $maxd=~s|-d||;
+    if(not $maxd) {
+      warn("No maximum distance passed!\n");
+      return;
+    }
+    if($g_verbose) { print "Maximum distance set to $maxd\n"; }
+    $g_maxd=$maxd;
+    return;
+  }
+  if($input_var=~m|-n|) {
+    my $maxn=$input_var;
+    $maxn=~s|-n||;
+    if(not $maxn) {
+      warn("No maximum distance passed!\n");
+      return;
+    }
+    if($g_verbose) { print "Node limit set to $maxn\n"; }
+    $g_max_nodes=$maxn;
+    return;
+  }
+
+  warn("Unrecognized argument '$input_var' passed - ignoring this!\n");
+  exit;
+  return;
+}
+
+sub proc_input {
+  foreach my $input_var (@ARGV) {
+    if(not defined($g_input)) {
+      if(-f $input_var or -d $input_var) {
+        $g_input=$input_var;
+        next;
+      }
+      else {
+        &proc_args($input_var);
+      }
+    }
+  }
+}
+
+#####################################################
+
+# The Main function of the script
+
+
+sub main {
+
+  &proc_input();
+
+  &init_auma();
+
+  &init_edges();
+
+  my $input=$g_input;
+
+  if($input) {
+    if(-d $input) {
+      &parse_dir($input);
+      return 0;
+    }    
+    elsif(-f $input) {
+      &parse_file($input);
+      return 0;
+    }
+    else {
+      warn("Error: path $input not found...\n");
+      return 0;
+    }
+  }
+  else {
+    if($g_verbose == 2) {
+      print("No arguments passed, processing $acis_dir...\n");
+    }
+    $g_all_auth=1;
+    &parse_dir($acis_dir);
+    return 0;
+  }
+  return 1;
+}
+
+sub vert_go_further_from {
+#  print("vert_go_further_from invoked.\n");
+
+  my $init_auth=shift;
+  my $i_aun=shift;
+
+  my $vema_values=shift;
+  my $r=shift;
+  my $dist=shift;
+# This was generated by &find_aunexes_for_aun.
+  my $n_aun=shift;
+  my $neighbors=shift;
+  my $poma=shift;
+  my $verbosity=$g_verbose;
+
+  my $w=0;
+  my $i=1;
+
+  my $n_i=scalar(keys %{$neighbors->{'w'}});
+  my $vema=undef;
+
+  $vema=undef;
+
+  my $vema_key=normalize_name($n_aun);
+
+  $vema=&vema_db_retrieve($vema_key, $g_vema_db);
+
+  if(not $n_aun) {
+    warn("vert_go_further_from: FATAL ERROR: \$n_aun not passed.\n");
+    exit;
+  }
+
+  if(not $r or not defined($r->{'p'}->{$dist}->{$n_aun})) {
+    #This is still needed to construct the vema path...
+    $r->{'p'}->{$dist}->{$n_aun}=$i_aun;
+  }
+  
+  # The weight for the neighbors structure was not stored as a symmetric weight value, but instead, as simply the summation of the total amount of collaborating authors for each paper collaborated upon by the authors to whom the aunexes being compared belong.  I am not sure what my reasoning behind this was at the time, but it may be unnecessary.
+
+  $w=$neighbors->{'w'}->{$n_aun};
+
+  if($w > 0) { $r->{'w'}->{$i_aun}->{$n_aun}=$w; }
+  else {
+    warn("vert_go_further_from: FATAL ERROR: Edge weight for $i_aun and $n_aun could not be found.\n");
+    print(Dumper $neighbors);
+    exit;
+  }
+
+  # If a vema path has already been stored into the database...
+  if(defined($vema)) {
+    # ...first check to see if the stored path is of a greater length that the path just generated for the aunex being explored...
+    if($vema->{'d'} > $dist) {
+      if($verbosity > 0) { print("vert_go_further_from: Shorter path found for $n_aun from $i_aun.\n"); }
+      # ...and store the newly calculated path if it is indeed shorter.
+      &store_vema_values($n_aun, $init_auth, $dist, $r, $g_vema_db, $g_verbose,$g_vema_db_env);
+    }
+    # ...otherwise, if the length of the vema path is equal to the path that has been stored...
+    elsif($vema->{'d'} == $dist) {
+      # ...and if the weight is less than the stored path...
+      if($vema->{'w'} > $r->{'w'}->{$i_aun}->{$n_aun}) {
+        #...store the newly calculated vema path.
+        if($verbosity > 0) { print("vert_go_further_from: Lighter path found for $n_aun from $i_aun.\n"); }
+        &store_vema_values($n_aun, $init_auth, $dist, $r, $g_vema_db, $g_verbose,$g_vema_db_env);
+      }
+      # ...or, if the distance is the same but the weight of the newly calculated path is greater than the stored vema path, compare, then, use the poma for a conmparison...
+      elsif($vema->{'e'} ne $init_auth and &compare_nodes_using_poma($vema->{'e'}, $init_auth, $poma) eq $init_auth) {
+        # and if the preferred author is the initial node of this path, store the newly calculated vema path.
+        if($verbosity > 0) { print("vert_go_further_from: The poma prefers path found for $n_aun from $i_aun to the path stored in the vema database.\n"); }
+        &store_vema_values($n_aun, $init_auth, $dist, $r, $g_vema_db, $g_verbose,$g_vema_db_env);
+      }
+    }
+  }
+  # ...and if the path hasn't been stored into the vema database at all, store the path.
+  else {
+    if($verbosity > 0) { print("vert_go_further_from: New path found for $n_aun from $i_aun.\n"); }
+    &store_vema_values($n_aun, $init_auth, $dist, $r, $g_vema_db, $g_verbose,$g_vema_db_env);
+  }
+  $i++;
+
+  $vema=undef;
+  return $r;
+}
+
+__END__
