@@ -1,8 +1,0 @@
-#!/usr/bin/perl
-
-use strict;
-use warnings;
-
-use lib qw( /home/aupro/ap/perl/lib );
-use AuthorProfile::Conf;
-

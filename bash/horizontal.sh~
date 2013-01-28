@@ -1,3 +1,0 @@
-#!/bin/bash
-
-nohup nice -n20 $HOME/ap/python/bin/horizontal.py > $HOME/var/log/horizontal/`date +%s`.log 2>&1 &
